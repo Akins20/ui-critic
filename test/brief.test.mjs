@@ -7,7 +7,7 @@ import { briefProblems, requireBrief, contextSections } from "../src/brief.mjs";
 import { mergeRequests, followablePages } from "../src/critique.mjs";
 import { auditSummary, auditForPrompt } from "../src/audit.mjs";
 import { requestsSection, coverageLine } from "../src/report.mjs";
-import { DEFAULTS, DEFAULT_DISCIPLINES } from "../src/config.mjs";
+import { DEFAULTS, DEFAULT_DISCIPLINES, DEFAULT_PRINCIPLES } from "../src/config.mjs";
 import { preamble } from "../src/critique.mjs";
 
 const GOOD = `# Store brief
@@ -115,4 +115,13 @@ test("coverageLine summarises fine, issues and not applicable", () => {
   ]);
   assert.equal(line, "Disciplines: 1 fine; issues in typography; 1 not applicable");
   assert.equal(coverageLine([]), "");
+});
+
+test("principles are enforced by default and the feedback rule comes first", () => {
+  assert.equal(DEFAULTS.principles, DEFAULT_PRINCIPLES);
+  assert.match(DEFAULT_PRINCIPLES[0], /feedback/);
+  const text = preamble(["typography: scale"], ["Every action gets feedback."]);
+  assert.match(text, /Interaction principles every screen must satisfy/);
+  assert.match(text, /1\. Every action gets feedback\./);
+  assert.doesNotMatch(preamble(["typography: scale"], []), /Interaction principles/);
 });

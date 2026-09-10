@@ -33,7 +33,12 @@ The critic never judges a generic store. Every request carries, in this order:
    imagery and icons, component states, navigation, microcopy, conversion, trust, motion,
    accessibility, responsiveness, and consistency across pages. Each page review accounts
    for every discipline (fine, issue, or not applicable), so nothing is skipped because a
-   louder problem caught its eye. The list is configurable (`disciplines`).
+   louder problem caught its eye. The list is configurable (`disciplines`). Alongside them,
+   a short list of **interaction principles** every screen must satisfy (`principles`,
+   also configurable), starting with the one screenshots miss most: every action a user
+   takes gets immediate, visible feedback (pressed, loading, success, error). A violation
+   is a finding; where a screenshot cannot show a state, the critic must ask rather than
+   assume.
 2. **The brief** (required): what the product is for, who it is for, the brand system,
    what to ignore, what matters most, benchmarks. `init` writes the template; a critique
    refuses to run while the brief is empty, still the template, or missing Product or
@@ -104,6 +109,7 @@ Every knob has a default. Resolution order, lowest to highest: built-in defaults
   "context": { "files": ["app/globals.css"], "answers": "ui-critic/answers.md" },
   "followRequests": { "enabled": true, "maxPages": 3 },
   "disciplines": ["layout and grid: ...", "typography: ..."],
+  "principles": ["Every action a user takes gets immediate, visible feedback: ..."],
   "out": "ui-critic-out",
   "model": "gemini-3.8-flash",
   "hideSelectors": ["nextjs-portal"],

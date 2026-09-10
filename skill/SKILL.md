@@ -26,6 +26,9 @@ not see the code or the product decisions, only what you give it.
    users are and what they compare it with, the brand system (read the actual tokens and
    fonts), what is placeholder content, what matters most, two or three benchmarks.
 3. **Give it what it needs.** Put design tokens, copy decks or policies in `context.files`.
+   Review `disciplines` and `principles` in the config: the principles are the house rules
+   every screen must satisfy (the first is that every user action gets immediate, visible
+   feedback); rewrite them for the product if the team has its own.
    Routes: home, a listing, a detail page, the money page, one content page, auth. Thinking
    `high` by default; `--include-thoughts` when you need to audit why a finding was made.
 4. **Run before.** `ui-critic run --base <url> --label before --follow-requests --json`.

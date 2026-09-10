@@ -32,6 +32,23 @@ export const DEFAULT_DISCIPLINES = [
 ];
 
 /**
+ * Interaction principles every screen must satisfy, product-agnostic, enforced on
+ * top of the disciplines. Rewrite the list in the config; the first one is the rule
+ * most often broken and most often missed by a screenshot review, so the critic
+ * is told to look for it deliberately.
+ */
+export const DEFAULT_PRINCIPLES = [
+  "Every action a user takes gets immediate, visible feedback: pressed and hover states, a loading state while waiting, a clear success or error state after, and nothing that silently does nothing.",
+  "One unmistakable primary action per screen; secondary actions look secondary.",
+  "The user always knows where they are, what will happen next, and how to go back.",
+  "Never lose what the user typed or chose; errors are prevented where possible and recoverable where not, explained in plain words next to the field.",
+  "Show real state, never fabricated content: honest empty states, no fake counts, no fake urgency.",
+  "Recognition over recall: options, prices and consequences are visible where the decision is made.",
+  "Respect the person and the device: reduced motion honoured, thumb reach on phones, targets at least 24px, contrast at least AA.",
+  "Consistency: the same element looks and behaves the same everywhere, and a change in one place is a change everywhere.",
+];
+
+/**
  * Every knob has a default here, so the tool runs with no config file at all and a
  * coding agent can override exactly the knobs it needs (file, env or flag).
  *
@@ -63,6 +80,7 @@ export const DEFAULTS = {
   context: { files: [], answers: "ui-critic/answers.md" },
   followRequests: { enabled: false, maxPages: 3 },
   disciplines: DEFAULT_DISCIPLINES,
+  principles: DEFAULT_PRINCIPLES,
   hideSelectors: [],
   thinking: { level: "high", budget: undefined, includeThoughts: false },
   cache: { enabled: true, ttlSeconds: 3600, minTokens: 2048, keep: false },
@@ -147,6 +165,7 @@ export function validate(cfg) {
     throw new Error("followRequests.maxPages must be a non-negative integer");
   }
   if (!Array.isArray(cfg.disciplines) || cfg.disciplines.length === 0) throw new Error("disciplines must be a non-empty list");
+  if (!Array.isArray(cfg.principles)) throw new Error("principles must be a list");
   return cfg;
 }
 

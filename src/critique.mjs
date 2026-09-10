@@ -11,12 +11,16 @@ import { requireBrief, contextSections } from "./brief.mjs";
  * review sweeps every craft (type, spacing, dividers, states, motion and the rest)
  * and accounts for each in coverage, instead of fixating on the loudest problem.
  */
-export function preamble(disciplines) {
+export function preamble(disciplines, principles = []) {
   const list = disciplines.map((d, i) => `${i + 1}. ${d}`).join("\n");
+  const rules = principles.map((p, i) => `${i + 1}. ${p}`).join("\n");
   return `${PREAMBLE}
 
 Design disciplines to sweep on every page, one by one. For each, either raise a finding or record in coverage that you checked it and it is fine (or not applicable), with a one-line note:
-${list}`;
+${list}${rules ? `
+
+Interaction principles every screen must satisfy. A violation is a finding; name the principle in the observation. Where a screenshot cannot show it (a pressed state, a loading state, an error state), say so and ask for the measurement or the page state in requests rather than assuming it is fine:
+${rules}` : ""}`;
 }
 
 export const PREAMBLE = `You are a senior product designer and conversion specialist reviewing a live website from screenshots and measured facts. You are fluent in every craft of interface design: layout, spacing, typography, colour, surfaces and dividers, iconography, component states, motion, copy, accessibility and conversion.
@@ -227,7 +231,7 @@ export async function critique({ dir, config }) {
   });
 
   const extra = await contextSections(config);
-  const prefix = [text(preamble(config.disciplines)), text(briefSection(config.briefText))];
+  const prefix = [text(preamble(config.disciplines, config.principles)), text(briefSection(config.briefText))];
   if (extra) prefix.push(text(extra));
   for (const s of manifest.shots) {
     prefix.push(text(`Screenshot: ${s.route} at ${s.viewport}, above the fold (${s.title})`), await imagePart(s.fold));

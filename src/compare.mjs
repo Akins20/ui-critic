@@ -54,7 +54,7 @@ export async function compare({ before, after, config }) {
     runLabel: `compare:${mb.label}->${ma.label}`,
   });
   const extra = await contextSections(config);
-  const prefix = [text(preamble(config.disciplines)), text(briefSection(config.briefText))];
+  const prefix = [text(preamble(config.disciplines, config.principles)), text(briefSection(config.briefText))];
   if (extra) prefix.push(text(extra));
   const cached = await client.ensureCache(prefix, `ui-critic compare ${ma.label}`);
   const key = (s) => `${s.route}::${s.viewport}`;
