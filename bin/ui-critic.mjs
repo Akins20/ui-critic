@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-import path from "node:path";
 import { parseArgs } from "node:util";
 import { loadConfig, init } from "../src/config.mjs";
 import { capture } from "../src/capture.mjs";
@@ -13,20 +12,26 @@ const HELP = `ui-critic: a second pair of eyes on a UI, for coding agents and hu
 Commands
   init       [--base <url>]                          write a starter ui-critic.config.json and brief
   models     [--filter flash]                        list vision-capable Gemini models
-  capture    --base <url> --label <name>             screenshot every route at every viewport
-  critique   --in <capture dir>                      ranked findings, scores, priorities
+  capture    --base <url> --label <name>             screenshot and measure every route at every viewport
+  critique   --in <capture dir>                      ranked findings, scores, priorities, the critic's requests
   compare    --before <dir> --after <dir>            what improved, regressed, is still open
   run        --base <url> --label <name>             capture then critique, in one go
   verify     --before <dir> --base <url> [--label after]   capture "after" then compare
 
+The brief (ui-critic/brief.md by default) is required for critique, compare, run and
+verify: it tells the critic what the product is for and who it is for.
+
 Options (flags win over env, env over ui-critic.config.json, file over defaults)
   --config <file>  --routes /,/shop  --out <dir>  --brief <file>  --model <id>
+  --context <file,file>   extra files for the critic (tokens, copy, policies)
+  --answers <file>        answers to the critic's earlier requests (default ui-critic/answers.md)
+  --follow-requests [--max-pages N]   capture and review same-origin pages the critic asks for
   --thinking-level off|low|medium|high   --include-thoughts   --no-cache   --ttl <seconds>
   --temperature <0..2>   --json (machine-readable summary on stdout)
   --fail-on regressed|worse   (compare/verify: exit 2 when any page matches)
 
 Environment: GEMINI_API_KEY (required, never stored), GEMINI_MODEL, UI_CRITIC_THINKING,
-UI_CRITIC_CACHE=0, UI_CRITIC_OUT.
+UI_CRITIC_CACHE=0, UI_CRITIC_OUT, UI_CRITIC_BRIEF.
 `;
 
 const [cmd, ...rest] = process.argv.slice(2);
@@ -40,6 +45,10 @@ const { values: flags } = parseArgs({
     out: { type: "string" },
     config: { type: "string" },
     brief: { type: "string" },
+    context: { type: "string" },
+    answers: { type: "string" },
+    "follow-requests": { type: "boolean" },
+    "max-pages": { type: "string" },
     model: { type: "string" },
     in: { type: "string" },
     before: { type: "string" },
@@ -78,12 +87,14 @@ async function doCapture(config, label) {
 
 async function doCritique(config, dir) {
   const result = await critique({ dir, config });
+  const openRequests = (result.requests ?? []).filter((r) => !(r.kind === "page" && result.followed?.routes?.includes(r.target)));
   emit(
     config,
     [
       `critique written:\n  ${result.jsonPath}\n  ${result.mdPath}`,
       `score ${result.overall.score}/100, revamp needed: ${result.overall.revamp_needed}`,
       `verdict: ${result.overall.verdict}`,
+      openRequests.length ? `the critic asks for ${openRequests.length} more thing(s); see the report` : "the critic asked for nothing more",
       usageLine(result.usage),
     ].join("\n"),
     {
@@ -93,6 +104,8 @@ async function doCritique(config, dir) {
       revampNeeded: result.overall.revamp_needed,
       topPriorities: result.overall.top_priorities,
       pages: result.pages.map((p) => ({ route: p.route, score: p.score, findings: p.findings.length })),
+      requests: openRequests,
+      followed: result.followed,
       usage: result.usage,
       files: { json: result.jsonPath, md: result.mdPath },
     },
@@ -129,7 +142,7 @@ async function main() {
   }
   if (cmd === "init") {
     const written = await init({ base: flags.base });
-    process.stdout.write(written.length ? `wrote:\n  ${written.join("\n  ")}\n` : "nothing to do: config and brief already exist\n");
+    process.stdout.write(written.length ? `wrote:\n  ${written.join("\n  ")}\nFill in the brief (Product and Audience at least) before running a critique.\n` : "nothing to do: config and brief already exist\n");
     return;
   }
   const config = await loadConfig(flags);
@@ -178,4 +191,3 @@ main().catch((err) => {
   console.error(`ui-critic: ${err.message}`);
   process.exitCode = 1;
 });
-

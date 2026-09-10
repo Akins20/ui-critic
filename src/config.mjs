@@ -9,16 +9,47 @@ export const DEFAULT_VIEWPORTS = {
 };
 
 /**
+ * The design disciplines the critic must sweep on every page and account for, one
+ * by one, so a review never silently skips typography or spacing because a bigger
+ * conversion issue caught its eye. Replace the list in the config to suit a product.
+ */
+export const DEFAULT_DISCIPLINES = [
+  "layout and grid: alignment, columns, gutters, balance, use of width",
+  "spacing and rhythm: vertical rhythm, padding consistency, grouping by proximity",
+  "typography: type scale, hierarchy, weights, line height, line length, font pairing, letter spacing",
+  "colour and contrast: palette use, emphasis, contrast ratios, theme consistency",
+  "surfaces, dividers, borders and elevation: cards, rules, shadows, radii, when a container earns its place",
+  "imagery and iconography: crop, aspect, quality, icon style and meaning",
+  "components and states: buttons, inputs, chips, links; hover, focus, active, disabled, loading, empty, error",
+  "navigation and wayfinding: where am I, where can I go, back paths, breadcrumbs, tabs",
+  "content and microcopy: clarity, tone, labels, numbers and money formatting",
+  "conversion flow and calls to action: primary action clarity, friction, order of information",
+  "trust and credibility: authenticity, payment security, policies, contact, social proof",
+  "motion and feedback: transitions, loading feedback, reduced motion",
+  "accessibility: semantics, headings, landmarks, contrast, target size, focus order, alt text",
+  "responsiveness and density: breakpoints, thumb reach, sticky elements, viewport collisions",
+  "consistency across pages: same thing looks and behaves the same everywhere",
+];
+
+/**
  * Every knob has a default here, so the tool runs with no config file at all and a
  * coding agent can override exactly the knobs it needs (file, env or flag).
  *
+ * brief: the product brief (purpose, audience, brand, constraints). Required for
+ * critique and compare: the critic judges against it, never against a generic
+ * site. init writes the template at ui-critic/brief.md.
+ * context.files: extra text files handed to the critic (design tokens, copy
+ * decks, policies). context.answers: where the critic's earlier requests are
+ * answered by the team; included when present.
+ * followRequests: let the tool capture and review same-origin pages the critic
+ * asks for, up to maxPages, in the same run.
  * thinking.level: "low" | "medium" | "high" (Gemini 3.x thinkingLevel) or "off";
  * thinking.budget: a token budget for models that use thinkingBudget instead;
  * thinking.includeThoughts: keep the model's reasoning in thoughts.md for audit.
- * cache: explicit context caching of the stable prefix (rules, brief, shared
- * screenshots); minTokens is the floor below which caching is skipped, since the
- * API refuses tiny caches. Prompts are also ordered stable-prefix-first so implicit
- * prefix caching applies even when explicit caching is off.
+ * cache: explicit context caching of the stable prefix (rules, brief, context,
+ * shared screenshots); minTokens is the floor below which caching is skipped.
+ * Prompts are also ordered stable-prefix-first so implicit prefix caching applies
+ * even when explicit caching is off.
  * pricing: USD per one million tokens per model; unknown models report tokens only.
  */
 export const DEFAULTS = {
@@ -28,7 +59,10 @@ export const DEFAULTS = {
   viewports: DEFAULT_VIEWPORTS,
   out: "ui-critic-out",
   model: "gemini-3.8-flash",
-  brief: undefined,
+  brief: "ui-critic/brief.md",
+  context: { files: [], answers: "ui-critic/answers.md" },
+  followRequests: { enabled: false, maxPages: 3 },
+  disciplines: DEFAULT_DISCIPLINES,
   hideSelectors: [],
   thinking: { level: "high", budget: undefined, includeThoughts: false },
   cache: { enabled: true, ttlSeconds: 3600, minTokens: 2048, keep: false },
@@ -62,6 +96,7 @@ export function envOverrides(env = process.env) {
   if (env.UI_CRITIC_THINKING) o.thinking = { level: env.UI_CRITIC_THINKING };
   if (env.UI_CRITIC_CACHE === "0" || env.UI_CRITIC_CACHE === "false") o.cache = { enabled: false };
   if (env.UI_CRITIC_OUT) o.out = env.UI_CRITIC_OUT;
+  if (env.UI_CRITIC_BRIEF) o.brief = env.UI_CRITIC_BRIEF;
   return o;
 }
 
@@ -74,6 +109,10 @@ export function flagOverrides(flags) {
   if (flags.out) o.out = flags.out;
   if (flags.model) o.model = flags.model;
   if (flags.brief) o.brief = flags.brief;
+  if (flags.context) o.context = { files: flags.context.split(",").map((f) => f.trim()).filter(Boolean) };
+  if (flags.answers) o.context = { ...(o.context ?? {}), answers: flags.answers };
+  if (flags["follow-requests"]) o.followRequests = { enabled: true };
+  if (flags["max-pages"]) o.followRequests = { ...(o.followRequests ?? {}), maxPages: Number(flags["max-pages"]) };
   if (flags["thinking-level"] || flags["include-thoughts"] !== undefined) {
     o.thinking = {};
     if (flags["thinking-level"]) o.thinking.level = flags["thinking-level"];
@@ -104,13 +143,18 @@ export function validate(cfg) {
   for (const [name, vp] of Object.entries(cfg.viewports)) {
     if (!(vp.width > 0 && vp.height > 0)) throw new Error(`viewport ${name} needs a positive width and height`);
   }
+  if (!(Number.isInteger(cfg.followRequests.maxPages) && cfg.followRequests.maxPages >= 0)) {
+    throw new Error("followRequests.maxPages must be a non-negative integer");
+  }
+  if (!Array.isArray(cfg.disciplines) || cfg.disciplines.length === 0) throw new Error("disciplines must be a non-empty list");
   return cfg;
 }
 
 /**
  * Resolution order, lowest to highest: DEFAULTS, ui-critic.config.json (in the
- * working directory or --config), environment, flags. The brief file is read here so
- * every command receives its text.
+ * working directory or --config), environment, flags. The brief file is read here
+ * when it exists; whether it is good enough is checked by the commands that need
+ * it, with an actionable message.
  */
 export async function loadConfig(flags = {}, env = process.env) {
   const configPath = flags.config ?? path.join(process.cwd(), CONFIG_FILE);
@@ -122,7 +166,14 @@ export async function loadConfig(flags = {}, env = process.env) {
   }
   const cfg = validate(merge(merge(merge(DEFAULTS, file), envOverrides(env)), flagOverrides(flags)));
   cfg.configPath = configPath;
-  cfg.briefText = cfg.brief ? await readFile(path.resolve(cfg.brief), "utf8") : "";
+  cfg.briefText = "";
+  if (cfg.brief) {
+    try {
+      cfg.briefText = await readFile(path.resolve(cfg.brief), "utf8");
+    } catch (err) {
+      if (err.code !== "ENOENT") throw new Error(`could not read the brief ${cfg.brief}: ${err.message}`);
+    }
+  }
   return cfg;
 }
 
@@ -139,7 +190,6 @@ export async function init({ base, cwd = process.cwd() }) {
     const starter = merge(DEFAULTS, {
       base: base ?? "http://localhost:3000",
       routes: ["/"],
-      brief: "ui-critic/brief.md",
       hideSelectors: ["nextjs-portal"],
       pricing: { [DEFAULTS.model]: { input: null, output: null, cached: null } },
     });

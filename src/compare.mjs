@@ -1,8 +1,10 @@
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { GeminiClient, imagePart, text } from "./gemini.mjs";
-import { PREAMBLE, briefSection } from "./critique.mjs";
+import { preamble, briefSection } from "./critique.mjs";
 import { renderCompare } from "./report.mjs";
+import { auditForPrompt } from "./audit.mjs";
+import { requireBrief, contextSections } from "./brief.mjs";
 
 const COMPARISON = {
   type: "OBJECT",
@@ -17,16 +19,30 @@ const COMPARISON = {
 };
 
 async function readManifest(dir) {
-  return JSON.parse(await readFile(path.join(dir, "manifest.json"), "utf8"));
+  const m = JSON.parse(await readFile(path.join(dir, "manifest.json"), "utf8"));
+  m.dir = m.dir ?? dir;
+  return m;
+}
+
+async function readAudit(shot) {
+  if (!shot?.audit) return null;
+  try {
+    return JSON.parse(await readFile(shot.audit, "utf8"));
+  } catch {
+    return null;
+  }
 }
 
 /**
  * Compares two capture sets page by page and viewport by viewport (before and
  * after), asking for what improved, what regressed and what is still open, so a
- * round of changes is verified visually rather than assumed. The rules and brief are
- * the cached prefix. Writes compare.json and compare.md into the after directory.
+ * round of changes is verified visually rather than assumed. Measured facts for
+ * both sides travel with the screenshots when they exist. The rules, brief and
+ * extra context are the cached prefix. Writes compare.json and compare.md into the
+ * after directory.
  */
 export async function compare({ before, after, config }) {
+  requireBrief(config);
   const [mb, ma] = await Promise.all([readManifest(before), readManifest(after)]);
   const client = new GeminiClient({
     model: config.model,
@@ -37,7 +53,9 @@ export async function compare({ before, after, config }) {
     ledgerPath: path.join(config.out, config.ledger),
     runLabel: `compare:${mb.label}->${ma.label}`,
   });
-  const prefix = [text(PREAMBLE), text(briefSection(config.briefText))];
+  const extra = await contextSections(config);
+  const prefix = [text(preamble(config.disciplines)), text(briefSection(config.briefText))];
+  if (extra) prefix.push(text(extra));
   const cached = await client.ensureCache(prefix, `ui-critic compare ${ma.label}`);
   const key = (s) => `${s.route}::${s.viewport}`;
   const beforeByKey = new Map(mb.shots.map((s) => [key(s), s]));
@@ -49,7 +67,7 @@ export async function compare({ before, after, config }) {
       const parts = cached ? [] : [...prefix];
       parts.push(
         text(
-          `## Task\nCompare the page ${a.route} at ${a.viewport} before and after a round of changes. Only report differences you can actually see; identical captures are "same". Cite the element for every point.`,
+          `## Task\nCompare the page ${a.route} at ${a.viewport} before and after a round of changes. Only report differences you can actually see or measure; identical captures are "same". Cite the element for every point.`,
         ),
         text("BEFORE, above the fold"),
         await imagePart(b.fold),
@@ -60,6 +78,9 @@ export async function compare({ before, after, config }) {
         text("AFTER, full page"),
         await imagePart(a.full),
       );
+      const [auditBefore, auditAfter] = await Promise.all([readAudit(b), readAudit(a)]);
+      if (auditBefore) parts.push(text(`Measured facts BEFORE (JSON): ${auditForPrompt(auditBefore, 2500)}`));
+      if (auditAfter) parts.push(text(`Measured facts AFTER (JSON): ${auditForPrompt(auditAfter, 2500)}`));
       const { data } = await client.generateJSON({ parts, schema: COMPARISON, op: `compare:${a.route}@${a.viewport}` });
       results.push({ route: a.route, viewport: a.viewport, ...data });
       process.stderr.write(`  compared ${a.route} at ${a.viewport}: ${data.verdict}\n`);

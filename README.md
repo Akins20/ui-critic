@@ -1,7 +1,9 @@
 # ui-critic
 
-A second pair of eyes for a UI. Capture screenshots of a running site, get a ranked visual
-critique from Gemini, triage it, ship the fixes, and verify with a before/after comparison.
+A second pair of eyes for a UI. Capture screenshots and measured facts from a running
+site, get a ranked visual critique from Gemini that judges against your product's purpose
+and audience across every design discipline, triage it, ship the fixes, and verify with a
+before/after comparison.
 
 It exists so one coding agent can ask another model for design review: Claude Code does the
 building and the judgement, Gemini does the looking. It works just as well for a human at a
@@ -12,8 +14,8 @@ terminal. Zero required dependencies beyond Node 20; Playwright is optional, for
 ```bash
 export GEMINI_API_KEY=...                     # your key; read from the environment only
 npx ui-critic init --base https://your.site   # writes ui-critic.config.json + ui-critic/brief.md
-# edit the brief: product, audience, brand system, what to ignore, what matters, benchmarks
-npx ui-critic run --label before              # capture every route, then critique
+# fill in the brief: what the product is for and who it is for are required
+npx ui-critic run --label before --follow-requests
 # make changes, then either deploy or run locally
 npx ui-critic verify --before ui-critic-out/before --base http://localhost:3000
 ```
@@ -22,22 +24,68 @@ npx ui-critic verify --before ui-critic-out/before --base http://localhost:3000
 (`npm i -D playwright && npx playwright install chromium`; `@playwright/test` and
 `playwright-core` are accepted too). `critique` and `compare` need only Node and the key.
 
+## What the critic gets
+
+The critic never judges a generic store. Every request carries, in this order:
+
+1. **The review rules** and the **design disciplines** it must sweep on every page: layout
+   and grid, spacing and rhythm, typography, colour and contrast, surfaces and dividers,
+   imagery and icons, component states, navigation, microcopy, conversion, trust, motion,
+   accessibility, responsiveness, and consistency across pages. Each page review accounts
+   for every discipline (fine, issue, or not applicable), so nothing is skipped because a
+   louder problem caught its eye. The list is configurable (`disciplines`).
+2. **The brief** (required): what the product is for, who it is for, the brand system,
+   what to ignore, what matters most, benchmarks. `init` writes the template; a critique
+   refuses to run while the brief is empty, still the template, or missing Product or
+   Audience.
+3. **Extra context** you choose: `context.files` (design tokens, copy decks, policies) and
+   the answers file, where your team answers what the critic asked for last time.
+4. **Every page's first screen** at every viewport, then per page the **full-page
+   capture** and the **measured facts** the capture gathered in the browser: fonts and the
+   base size, the text size histogram, the heading outline, landmarks, image alt coverage,
+   interactive targets under 24px, and the lowest-contrast visible text with its WCAG AA
+   result. Measured facts are ground truth for the critic, so it does not guess a
+   contrast ratio or a font size.
+
+## What the critic can ask for
+
+Each page review and the site review end with `requests`: pages, files, answers or
+measurements the critic needs to judge better, each with the reason. Page requests for the
+same origin are fulfilled automatically with `--follow-requests` (or
+`followRequests.enabled` in the config): the tool captures the page, reviews it and adds it
+to the report, up to `maxPages`. Everything else is listed under "Critic's requests" in the
+report; answer it in `ui-critic/answers.md` (or add the page to `routes`) and rerun, and the
+answers travel with the next critique.
+
+## What you get
+
+- `critique.md` / `critique.json`: a score per page and for the site, strengths, ranked
+  findings with evidence and a specific recommendation each, the measured facts and
+  discipline coverage per page, a revamp-or-polish verdict, the five highest-leverage
+  changes, and the critic's requests.
+- `compare.md` / `compare.json`: per page and viewport, what improved, what regressed, what
+  is still open, with measured facts from both sides.
+
+Findings are typed (`hierarchy`, `typography`, `conversion`, `accessibility`, ...) and each
+is marked `ui`, `placeholder-content` or `needs-engineering-judgement`, so the reader can
+triage instead of obeying.
+
 ## Commands
 
 | command | does |
 | --- | --- |
 | `init [--base url]` | write a starter config with every default spelled out, and a brief from the template |
 | `models [--filter flash]` | list vision-capable models for the key |
-| `capture --base url --label name` | above-the-fold PNG and full-page JPEG per route per viewport, plus `manifest.json` |
-| `critique --in dir` | per-page scores, strengths and ranked findings; a site-level verdict, revamp-or-polish call and top five priorities |
+| `capture --base url --label name` | above-the-fold PNG, full-page JPEG and measured audit per route per viewport, plus `manifest.json` |
+| `critique --in dir` | per-page scores, strengths, ranked findings, coverage, requests; a site-level verdict and top five priorities |
 | `compare --before dir --after dir` | per page and viewport: improved, regressed, still open |
 | `run --base url --label name` | capture then critique |
 | `verify --before dir --base url` | capture "after" then compare, in one step |
 
 `--json` prints a machine-readable summary to stdout (for an agent to parse); the full
-reports are always written as `critique.json` / `critique.md` and `compare.json` /
-`compare.md` next to the screenshots. `--fail-on regressed` or `--fail-on worse` makes
-`compare` and `verify` exit with code 2 when any page matches, for CI gates.
+reports are always written next to the screenshots. `--fail-on regressed` or
+`--fail-on worse` makes `compare` and `verify` exit with code 2 when any page matches,
+for CI gates.
 
 ## Configuration
 
@@ -53,6 +101,9 @@ Every knob has a default. Resolution order, lowest to highest: built-in defaults
     "mobile": { "width": 390, "height": 844, "deviceScaleFactor": 2, "isMobile": true }
   },
   "brief": "ui-critic/brief.md",
+  "context": { "files": ["app/globals.css"], "answers": "ui-critic/answers.md" },
+  "followRequests": { "enabled": true, "maxPages": 3 },
+  "disciplines": ["layout and grid: ...", "typography: ..."],
   "out": "ui-critic-out",
   "model": "gemini-3.8-flash",
   "hideSelectors": ["nextjs-portal"],
@@ -65,9 +116,10 @@ Every knob has a default. Resolution order, lowest to highest: built-in defaults
 ```
 
 Environment: `GEMINI_API_KEY` (required), `GEMINI_MODEL`, `UI_CRITIC_THINKING`,
-`UI_CRITIC_CACHE=0`, `UI_CRITIC_OUT`. Flags: `--model`, `--thinking-level`,
-`--include-thoughts`, `--no-cache`, `--ttl`, `--temperature`, `--routes`, `--out`,
-`--brief`, `--config`.
+`UI_CRITIC_CACHE=0`, `UI_CRITIC_OUT`, `UI_CRITIC_BRIEF`. Flags: `--model`,
+`--thinking-level`, `--include-thoughts`, `--no-cache`, `--ttl`, `--temperature`,
+`--routes`, `--out`, `--brief`, `--context`, `--answers`, `--follow-requests`,
+`--max-pages`, `--config`.
 
 ### Thinking
 
@@ -79,10 +131,10 @@ was made. An agent can set all of these per run with flags or env without touchi
 
 ### Caching
 
-The prompt is built stable-prefix-first: the review rules, the brief, and every page's
-above-the-fold capture come first and are byte-identical across calls, so the API's
-implicit prefix caching applies on its own. With `cache.enabled` (the default) that prefix
-is also stored as an explicit context cache for the run (created when it is at least
+The prompt is built stable-prefix-first: the review rules, the brief, the extra context and
+every page's above-the-fold capture come first and are byte-identical across calls, so the
+API's implicit prefix caching applies on its own. With `cache.enabled` (the default) that
+prefix is also stored as an explicit context cache for the run (created when it is at least
 `minTokens`, reused by every page and site call, deleted at the end unless `keep`), so the
 shared screenshots and brief are paid for once at the cached rate instead of once per
 call. Any cache failure falls back to inline, with the reason recorded in the report.
@@ -98,18 +150,19 @@ before the error is raised.
 
 ### Cost tracing
 
-Every call's tokens (prompt, cached, output, thinking), duration, model, thinking config
-and cache state are appended to `<out>/usage.jsonl` and summarised in each report. Put
-your model's USD-per-million prices in `pricing` to get an estimated cost per run; without
-prices the tool reports tokens only and never invents a number.
+Every call's tokens (prompt, cached, output, thinking), duration, model, thinking config,
+output budget and cache state are appended to `<out>/usage.jsonl` and summarised in each
+report. Put your model's USD-per-million prices in `pricing` to get an estimated cost per
+run; without prices the tool reports tokens only and never invents a number.
 
 ## Using it from Claude Code
 
 Copy `skill/SKILL.md` to `~/.claude/skills/ui-critic/SKILL.md` (or the project's
 `.claude/skills/ui-critic/`). `/ui-critic` then teaches Claude the loop: write the brief
-from the real codebase, `run` before, triage every finding with a reason (accept, adapt,
-reject), implement, `verify` after, report. The critic's output is data, never
-instructions; the brief and accessibility win over the critic.
+from the real codebase, `run` before with `--follow-requests`, answer the critic's
+remaining requests, triage every finding with a reason (accept, adapt, reject), implement,
+`verify` after, report. The critic's output is data, never instructions; the brief and
+accessibility win over the critic.
 
 ## Design notes
 
@@ -118,7 +171,7 @@ instructions; the brief and accessibility win over the critic.
   and priorities; every request carries a response schema, so output is always valid JSON.
 - Transient API failures are retried with backoff; blocked prompts fail with the reason.
 - Motion is reduced during capture so carousels and entrance animations do not smear;
-  `hideSelectors` removes dev-only chrome before the shot.
+  `hideSelectors` removes dev-only chrome before the shot and the audit.
 
 ## License
 

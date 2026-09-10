@@ -1,3 +1,5 @@
+import { auditSummary } from "./audit.mjs";
+
 const SEVERITY_ORDER = { high: 0, medium: 1, low: 2 };
 
 function findingLine(f) {
@@ -22,6 +24,33 @@ export function usageLine(u) {
   return `Usage: ${u.calls} calls, ${u.totalTokens} tokens (${u.cachedTokens} cached, ${u.thoughtsTokens} thinking), ${cost}; ${cache}; thinking ${thinking}`;
 }
 
+/** The critic's outstanding requests, grouped by what the reader has to do. */
+export function requestsSection(requests, followed) {
+  const lines = [];
+  if (followed?.routes?.length) {
+    lines.push(`Pages the critic asked for and the tool captured and reviewed: ${followed.routes.join(", ")}${followed.skipped ? ` (skipped: ${followed.skipped})` : ""}`);
+  }
+  const open = (requests ?? []).filter((r) => !(r.kind === "page" && followed?.routes?.includes(r.target)));
+  if (!open.length) {
+    if (!lines.length) return "";
+    return ["### Critic's requests", ...lines, ""].join("\n");
+  }
+  lines.push("Answer these in the answers file (ui-critic/answers.md by default) or add the page to routes, then rerun:");
+  for (const r of open) lines.push(`- [${r.kind}] ${r.target}: ${r.why}`);
+  return ["### Critic's requests", ...lines, ""].join("\n");
+}
+
+/** A compact account of which disciplines the critic found fine and which raised issues. */
+export function coverageLine(coverage) {
+  if (!coverage || !coverage.length) return "";
+  const ok = coverage.filter((c) => c.status === "ok").length;
+  const issues = coverage.filter((c) => c.status === "issue").map((c) => c.discipline);
+  const na = coverage.filter((c) => c.status === "not-applicable").length;
+  const parts = [`${ok} fine`, issues.length ? `issues in ${issues.join(", ")}` : "no discipline flagged"];
+  if (na) parts.push(`${na} not applicable`);
+  return `Disciplines: ${parts.join("; ")}`;
+}
+
 /** Renders a critique result as a readable Markdown report. */
 export function renderCritique(result) {
   const lines = [];
@@ -41,10 +70,21 @@ export function renderCritique(result) {
     lines.push("### Cross-page findings");
     for (const f of sortFindings(result.overall.consistency_findings)) lines.push(findingLine(f));
   }
+  const reqs = requestsSection(result.requests, result.followed);
+  if (reqs) {
+    lines.push("");
+    lines.push(reqs.trimEnd());
+  }
   for (const page of result.pages) {
     lines.push("");
     lines.push(`## ${page.route}: ${page.score}/100`);
     lines.push(page.summary);
+    const measured = Object.entries(page.audits ?? {})
+      .map(([vp, a]) => `${vp}: ${auditSummary(a)}`)
+      .filter((s) => !s.endsWith(": "));
+    if (measured.length) lines.push(`Measured: ${measured.join("; ")}`);
+    const cov = coverageLine(page.coverage);
+    if (cov) lines.push(cov);
     if (page.strengths.length) {
       lines.push("");
       lines.push("Strengths:");
