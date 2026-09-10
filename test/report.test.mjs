@@ -18,7 +18,8 @@ const finding = (id, severity) => ({
 
 test("routeSlug is file safe and stable", () => {
   assert.equal(routeSlug("/"), "home");
-  assert.equal(routeSlug("/products/agbada-set?x=1#top"), "products-agbada-set");
+  assert.equal(routeSlug("/products/agbada-set#top"), "products-agbada-set");
+  assert.equal(routeSlug("/products/agbada-set?x=1#top"), "products-agbada-set-q-x-1");
   assert.equal(routeSlug("shop/"), "shop");
 });
 

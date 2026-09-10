@@ -70,6 +70,11 @@ export function renderCritique(result) {
     lines.push("### Cross-page findings");
     for (const f of sortFindings(result.overall.consistency_findings)) lines.push(findingLine(f));
   }
+  if (result.skipped?.length) {
+    lines.push("");
+    lines.push("### Not captured");
+    for (const s of result.skipped) lines.push(`- ${s}`);
+  }
   const reqs = requestsSection(result.requests, result.followed);
   if (reqs) {
     lines.push("");

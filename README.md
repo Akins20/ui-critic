@@ -52,6 +52,44 @@ The critic never judges a generic store. Every request carries, in this order:
    result. Measured facts are ground truth for the critic, so it does not guess a
    contrast ratio or a font size.
 
+## States, mini-features and signed-in pages
+
+Screenshots of resting pages miss what happens when someone acts. **Scenarios** open a
+route, run a few steps and shoot the result, which is reviewed as its own page named
+`route [scenario]`: a filter sheet opened, a plan length pressed, a wishlist toggled, a
+card hovered, a link focused from the keyboard, an invalid form submitted, an empty search.
+The step vocabulary is `goto`, `click`, `hover`, `focus`, `fill`, `press`, `wait`,
+`waitFor`, `waitForURL` and `scroll`, with Playwright selectors.
+
+```json
+{
+  "routes": ["/", "/shop", "/shop?q=wig", { "path": "/account/plans", "auth": true }],
+  "scenarios": [
+    { "name": "filters-open", "route": "/shop", "steps": [{ "click": "text=Filters" }, { "wait": 400 }] },
+    { "name": "card-focus", "route": "/", "steps": [{ "focus": ".pcard .title" }] },
+    { "name": "invalid-submit", "route": "/login", "steps": [{ "fill": { "selector": "input[name=email]", "value": "not-an-email" } }, { "click": "button[type=submit]" }, { "wait": 500 }] }
+  ],
+  "auth": {
+    "mode": "form",
+    "login": "/login",
+    "envFile": "ui-critic/auth.env",
+    "steps": [
+      { "fill": { "selector": "input[name=email]", "envVar": "UI_CRITIC_AUTH_USER" } },
+      { "fill": { "selector": "input[name=password]", "envVar": "UI_CRITIC_AUTH_PASS" } },
+      { "click": "button[type=submit]" }
+    ],
+    "success": "**/account**"
+  }
+}
+```
+
+Routes and scenarios marked `auth: true` are captured in a signed-in context. The tool
+signs in with credentials it reads **by variable name** from the environment or from
+`auth.envFile` (keep that file out of git); a literal password in the config is rejected.
+`storageState` mode loads a Playwright storage state you exported after signing in
+yourself. When the credentials are missing the signed-in pages are skipped and the report
+says so under "Not captured", instead of quietly reviewing a login redirect.
+
 ## What the critic can ask for
 
 Each page review and the site review end with `requests`: pages, files, answers or
@@ -81,7 +119,7 @@ triage instead of obeying.
 | --- | --- |
 | `init [--base url]` | write a starter config with every default spelled out, and a brief from the template |
 | `models [--filter flash]` | list vision-capable models for the key |
-| `capture --base url --label name` | above-the-fold PNG, full-page JPEG and measured audit per route per viewport, plus `manifest.json` |
+| `capture --base url --label name` | above-the-fold PNG, full-page JPEG and measured audit per route, scenario and viewport (signed in where configured), plus `manifest.json` |
 | `critique --in dir` | per-page scores, strengths, ranked findings, coverage, requests; a site-level verdict and top five priorities |
 | `compare --before dir --after dir` | per page and viewport: improved, regressed, still open |
 | `run --base url --label name` | capture then critique |

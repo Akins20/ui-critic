@@ -29,7 +29,13 @@ not see the code or the product decisions, only what you give it.
    Review `disciplines` and `principles` in the config: the principles are the house rules
    every screen must satisfy (the first is that every user action gets immediate, visible
    feedback); rewrite them for the product if the team has its own.
-   Routes: home, a listing, a detail page, the money page, one content page, auth. Thinking
+   Routes: home, a listing, a detail page, the money page, one content page, auth, and the
+   signed-in pages (mark them `auth: true`). Add `scenarios` for the states a resting page
+   cannot show: a filter opened, an option pressed, a wishlist toggled, hover and keyboard
+   focus, an invalid submit, an empty search. For signed-in pages configure `auth` with
+   `fill.envVar` names and ask the user to put the credentials in the environment or the
+   gitignored `auth.envFile`; never type or paste a password yourself, and never put one in
+   the config. Thinking
    `high` by default; `--include-thoughts` when you need to audit why a finding was made.
 4. **Run before.** `ui-critic run --base <url> --label before --follow-requests --json`.
    Same-origin pages the critic asks for are captured and reviewed in the same run. Read

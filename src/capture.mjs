@@ -3,6 +3,7 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { auditScript } from "./audit.mjs";
+import { runSteps, readEnvFile, normalizeRoute } from "./steps.mjs";
 
 const PLAYWRIGHT_PACKAGES = ["playwright", "@playwright/test", "playwright-core"];
 
@@ -41,7 +42,14 @@ export async function loadPlaywright() {
 /** A file-safe name for a route: "/" becomes "home", "/products/x" becomes "products-x". */
 export function routeSlug(route) {
   const clean = route.replace(/[?#].*$/, "").replace(/^\/+|\/+$/g, "");
-  return (clean || "home").replace(/[^a-z0-9]+/gi, "-").toLowerCase();
+  const query = (route.match(/\?([^#]*)/) ?? [])[1];
+  const base = (clean || "home").replace(/[^a-z0-9]+/gi, "-").toLowerCase();
+  return query ? `${base}-q-${query.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}` : base;
+}
+
+/** The name a scenario shot is reviewed under: the route plus the scenario in brackets. */
+export function scenarioLabel(route, name) {
+  return name ? `${route} [${name}]` : route;
 }
 
 /**
@@ -65,20 +73,8 @@ async function settle(page, hideSelectors) {
   await page.waitForTimeout(700);
 }
 
-/**
- * Captures one route in an open browser context: the above-the-fold PNG, the
- * full-page JPEG and the measured audit. Shared by the initial capture and by the
- * follow-up capture of pages the critic asks for.
- */
-export async function captureRoute({ page, base, route, viewportName, dir, hideSelectors }) {
-  const url = new URL(route, base).toString();
-  try {
-    await page.goto(url, { waitUntil: "networkidle", timeout: 90_000 });
-  } catch {
-    await page.goto(url, { waitUntil: "load", timeout: 90_000 });
-  }
-  await settle(page, hideSelectors);
-  const slug = routeSlug(route);
+/** Screenshots and audits the page as it is now, under the given slug and label. */
+async function shoot({ page, dir, slug, viewportName, route, label, extra = {} }) {
   const fold = path.join(dir, `${slug}.${viewportName}.fold.png`);
   const full = path.join(dir, `${slug}.${viewportName}.full.jpg`);
   const audit = path.join(dir, `${slug}.${viewportName}.audit.json`);
@@ -91,11 +87,55 @@ export async function captureRoute({ page, base, route, viewportName, dir, hideS
     facts = { error: err.message };
   }
   await writeFile(audit, JSON.stringify(facts, null, 2));
-  return { route, url, viewport: viewportName, title: await page.title(), fold, full, audit };
+  return { route: label, path: route, url: page.url(), viewport: viewportName, title: await page.title(), fold, full, audit, ...extra };
+}
+
+/**
+ * Captures one route in an open browser context: the above-the-fold PNG, the
+ * full-page JPEG and the measured audit. Shared by the initial capture and by the
+ * follow-up capture of pages the critic asks for.
+ */
+export async function captureRoute({ page, base, route, viewportName, dir, hideSelectors, auth = false }) {
+  const url = new URL(route, base).toString();
+  try {
+    await page.goto(url, { waitUntil: "networkidle", timeout: 90_000 });
+  } catch {
+    await page.goto(url, { waitUntil: "load", timeout: 90_000 });
+  }
+  await settle(page, hideSelectors);
+  return shoot({ page, dir, slug: routeSlug(route), viewportName, route, label: route, extra: { auth } });
+}
+
+/**
+ * Captures one scenario: opens its route, runs its steps (a click, a hover, a
+ * keyboard focus, an invalid submit), waits for the UI to react, then shoots. The
+ * result is reviewed as its own page named "route [scenario]". A step that fails
+ * (a selector that never appears) is recorded rather than failing the run, so one
+ * fragile scenario cannot cost the whole capture.
+ */
+export async function captureScenario({ page, base, scenario, viewportName, dir, hideSelectors, secrets }) {
+  const url = new URL(scenario.route, base).toString();
+  try {
+    await page.goto(url, { waitUntil: "networkidle", timeout: 90_000 });
+  } catch {
+    await page.goto(url, { waitUntil: "load", timeout: 90_000 });
+  }
+  await settle(page, hideSelectors);
+  let steps;
+  let error = null;
+  try {
+    steps = await runSteps(page, scenario.steps, { base, secrets });
+    await page.waitForTimeout(scenario.settleMs ?? 600);
+  } catch (err) {
+    error = err.message;
+  }
+  const slug = `${routeSlug(scenario.route)}.${scenario.name.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}`;
+  const label = scenarioLabel(scenario.route, scenario.name);
+  return shoot({ page, dir, slug, viewportName, route: scenario.route, label, extra: { scenario: scenario.name, steps, stepError: error, auth: Boolean(scenario.auth) } });
 }
 
 /** Opens a browser context for one named viewport with motion reduced and a light scheme. */
-export async function openContext(browser, vp) {
+export async function openContext(browser, vp, extra = {}) {
   return browser.newContext({
     viewport: { width: vp.width, height: vp.height },
     deviceScaleFactor: vp.deviceScaleFactor ?? 1,
@@ -103,36 +143,103 @@ export async function openContext(browser, vp) {
     hasTouch: Boolean(vp.isMobile),
     colorScheme: vp.colorScheme ?? "light",
     reducedMotion: "reduce",
+    ...extra,
   });
 }
 
 /**
- * Captures every route at every viewport: an above-the-fold PNG (what a visitor
- * sees first), a full-page JPEG (layout and rhythm) and a measured audit (fonts,
- * headings, targets, contrast), and writes the manifest.json that critique and
- * compare read. Motion is reduced so carousels and entrance animations do not
- * smear the capture.
+ * Builds a signed-in context, or explains why it could not. storageState mode
+ * loads a Playwright storage state file the user exported after signing in
+ * themselves; form mode runs the configured login steps with credentials read from
+ * the environment (or the auth env file) by variable name. Nothing secret is ever
+ * logged or written.
  */
-export async function capture({ base, routes, viewports, out, label, hideSelectors = [] }) {
+async function openAuthContext(browser, vp, auth, base, secrets) {
+  if (!auth) return { context: null, reason: "no auth configured" };
+  if (auth.mode === "storageState") {
+    try {
+      const context = await openContext(browser, vp, { storageState: path.resolve(auth.path) });
+      return { context, reason: null };
+    } catch (err) {
+      return { context: null, reason: `storage state ${auth.path} could not be loaded: ${err.message}` };
+    }
+  }
+  const needed = (auth.steps ?? []).map((s) => s.fill?.envVar).filter(Boolean);
+  const missing = needed.filter((name) => !(process.env[name] ?? secrets[name]));
+  if (missing.length) return { context: null, reason: `auth skipped: ${missing.join(", ")} not set in the environment or the auth env file` };
+  const context = await openContext(browser, vp);
+  const page = await context.newPage();
+  try {
+    await page.goto(new URL(auth.login ?? "/login", base).toString(), { waitUntil: "networkidle", timeout: 90_000 });
+    await runSteps(page, auth.steps, { base, secrets });
+    if (auth.success) await page.waitForURL(auth.success, { timeout: 30_000 });
+    await page.close();
+    return { context, reason: null };
+  } catch (err) {
+    await context.close().catch(() => {});
+    return { context: null, reason: `auth failed: ${err.message}` };
+  }
+}
+
+/**
+ * Captures every route and scenario at every viewport: an above-the-fold PNG
+ * (what a visitor sees first), a full-page JPEG (layout and rhythm) and a measured
+ * audit (fonts, headings, targets, contrast), and writes the manifest.json that
+ * critique and compare read. Routes and scenarios marked auth run in a signed-in
+ * context when the auth config can sign in; otherwise they are skipped and the
+ * reason is recorded. Motion is reduced so carousels and entrance animations do
+ * not smear the capture.
+ */
+export async function capture({ base, routes, scenarios = [], auth = null, viewports, out, label, hideSelectors = [] }) {
   const playwright = await loadPlaywright();
   const dir = path.join(out, label);
   await mkdir(dir, { recursive: true });
+  const secrets = await readEnvFile(auth?.envFile);
   const browser = await playwright.chromium.launch();
   const shots = [];
+  const skipped = [];
+  const entries = routes.map(normalizeRoute);
   try {
     for (const [viewportName, vp] of Object.entries(viewports)) {
-      const context = await openContext(browser, vp);
-      const page = await context.newPage();
-      for (const route of routes) {
-        shots.push(await captureRoute({ page, base, route, viewportName, dir, hideSelectors }));
-        process.stderr.write(`  ${viewportName.padEnd(8)} ${route}\n`);
+      const anon = await openContext(browser, vp);
+      const page = await anon.newPage();
+      for (const entry of entries.filter((e) => !e.auth)) {
+        shots.push(await captureRoute({ page, base, route: entry.path, viewportName, dir, hideSelectors }));
+        process.stderr.write(`  ${viewportName.padEnd(8)} ${entry.path}\n`);
       }
-      await context.close();
+      for (const scenario of scenarios.filter((s) => !s.auth)) {
+        const shot = await captureScenario({ page, base, scenario, viewportName, dir, hideSelectors, secrets });
+        shots.push(shot);
+        process.stderr.write(`  ${viewportName.padEnd(8)} ${shot.route}${shot.stepError ? ` (step failed: ${shot.stepError.slice(0, 80)})` : ""}\n`);
+      }
+      await anon.close();
+
+      const authEntries = entries.filter((e) => e.auth);
+      const authScenarios = scenarios.filter((s) => s.auth);
+      if (authEntries.length || authScenarios.length) {
+        const { context, reason } = await openAuthContext(browser, vp, auth, base, secrets);
+        if (!context) {
+          skipped.push(...authEntries.map((e) => `${e.path} (${reason})`), ...authScenarios.map((s) => `${scenarioLabel(s.route, s.name)} (${reason})`));
+          process.stderr.write(`  ${viewportName.padEnd(8)} signed-in pages skipped: ${reason}\n`);
+        } else {
+          const authPage = await context.newPage();
+          for (const entry of authEntries) {
+            shots.push(await captureRoute({ page: authPage, base, route: entry.path, viewportName, dir, hideSelectors, auth: true }));
+            process.stderr.write(`  ${viewportName.padEnd(8)} ${entry.path} (signed in)\n`);
+          }
+          for (const scenario of authScenarios) {
+            const shot = await captureScenario({ page: authPage, base, scenario, viewportName, dir, hideSelectors, secrets });
+            shots.push(shot);
+            process.stderr.write(`  ${viewportName.padEnd(8)} ${shot.route} (signed in)${shot.stepError ? ` (step failed: ${shot.stepError.slice(0, 80)})` : ""}\n`);
+          }
+          await context.close();
+        }
+      }
     }
   } finally {
     await browser.close();
   }
-  const manifest = { label, base, capturedAt: new Date().toISOString(), viewports, hideSelectors, shots, dir };
+  const manifest = { label, base, capturedAt: new Date().toISOString(), viewports, hideSelectors, shots, skipped: Array.from(new Set(skipped)), dir };
   await writeFile(path.join(dir, "manifest.json"), JSON.stringify(manifest, null, 2));
   return manifest;
 }

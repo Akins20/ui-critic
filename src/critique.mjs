@@ -151,7 +151,7 @@ export function mergeRequests(lists) {
  * is left for the human or agent.
  */
 export function followablePages(requests, manifest, maxPages) {
-  const have = new Set(manifest.shots.map((s) => s.route));
+  const have = new Set(manifest.shots.map((s) => s.path ?? s.route));
   const out = [];
   for (const r of requests) {
     if (r.kind !== "page") continue;
@@ -250,7 +250,7 @@ export async function critique({ dir, config }) {
     }
     parts.push(
       text(
-        `## Task\nReview the page ${route} ("${shots[0].title}"). You already have its above-the-fold capture per viewport; here is the full-page capture per viewport (the whole scroll) and the measured facts. Name the page's real strengths first, then list findings, then account for every design discipline in coverage, then anything you still need in requests. Set page to "${route}".`,
+        `## Task\nReview ${shots[0].scenario ? `the state "${shots[0].scenario}" of the page ${shots[0].path}` : `the page ${route}`} ("${shots[0].title}")${shots[0].scenario ? `, captured after these steps: ${(shots[0].steps ?? []).join("; ") || "none"}${shots[0].stepError ? ` (a step failed: ${shots[0].stepError})` : ""}. Judge the state the interaction produced: the feedback, the affordance, what changed and whether it is clear` : ""}${shots[0].auth ? ". The visitor is signed in." : ""}. You already have its above-the-fold capture per viewport; here is the full-page capture per viewport (the whole scroll) and the measured facts. Name the page's real strengths first, then list findings, then account for every design discipline in coverage, then anything you still need in requests. Set page to "${route}".`,
       ),
     );
     for (const s of shots) {
@@ -348,6 +348,7 @@ export async function critique({ dir, config }) {
       pages,
       requests,
       followed,
+      skipped: manifest.skipped ?? [],
       usage: client.summary(),
       ...(siteError ? { error: siteError } : {}),
     };

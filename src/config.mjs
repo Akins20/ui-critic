@@ -1,6 +1,7 @@
 import { readFile, writeFile, mkdir, access } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { stepProblems, normalizeRoute } from "./steps.mjs";
 
 /** Built-in viewports: a common laptop and a common phone (2x for crisp text). */
 export const DEFAULT_VIEWPORTS = {
@@ -73,6 +74,8 @@ export const DEFAULTS = {
   base: undefined,
   label: undefined,
   routes: ["/"],
+  scenarios: [],
+  auth: null,
   viewports: DEFAULT_VIEWPORTS,
   out: "ui-critic-out",
   model: "gemini-3.8-flash",
@@ -158,6 +161,27 @@ export function validate(cfg) {
     throw new Error("generation.temperature must be between 0 and 2");
   }
   if (!Array.isArray(cfg.routes) || cfg.routes.length === 0) throw new Error("routes must be a non-empty list");
+  for (const entry of cfg.routes) {
+    const r = normalizeRoute(entry);
+    if (typeof r.path !== "string" || !r.path) throw new Error("every route needs a path");
+  }
+  if (!Array.isArray(cfg.scenarios)) throw new Error("scenarios must be a list");
+  cfg.scenarios.forEach((s, i) => {
+    if (!s || typeof s.name !== "string" || !s.name) throw new Error(`scenarios[${i}] needs a name`);
+    if (typeof s.route !== "string" || !s.route) throw new Error(`scenario ${s.name} needs a route`);
+    const problems = stepProblems(s.steps, `scenario ${s.name} steps`);
+    if (problems.length) throw new Error(problems.join("; "));
+  });
+  if (cfg.auth) {
+    if (!["form", "storageState"].includes(cfg.auth.mode)) throw new Error("auth.mode must be form or storageState");
+    if (cfg.auth.mode === "storageState" && typeof cfg.auth.path !== "string") throw new Error("auth.path is required for storageState");
+    if (cfg.auth.mode === "form") {
+      const problems = stepProblems(cfg.auth.steps, "auth.steps");
+      if (problems.length) throw new Error(problems.join("; "));
+      const literalSecret = (cfg.auth.steps ?? []).some((s) => s.fill && /pass|secret|token/i.test(s.fill.selector) && s.fill.value !== undefined);
+      if (literalSecret) throw new Error("auth.steps must not contain a literal password: use fill.envVar and set the variable in the environment or auth.envFile");
+    }
+  }
   for (const [name, vp] of Object.entries(cfg.viewports)) {
     if (!(vp.width > 0 && vp.height > 0)) throw new Error(`viewport ${name} needs a positive width and height`);
   }
@@ -168,6 +192,10 @@ export function validate(cfg) {
   if (!Array.isArray(cfg.principles)) throw new Error("principles must be a list");
   return cfg;
 }
+
+/**
+ * Whether a route entry (string or object) needs the signed-in context. */
+export { normalizeRoute };
 
 /**
  * Resolution order, lowest to highest: DEFAULTS, ui-critic.config.json (in the
