@@ -35,7 +35,7 @@ test("renderCritique orders findings by severity and includes usage", () => {
   });
   assert.match(md, /revamp needed: no/);
   assert.ok(md.indexOf("home-2") < md.indexOf("home-1"), "high severity first");
-  assert.match(md, /Usage: 2 calls, 100 tokens \(40 cached, 10 thinking\), about \$0.0123; cache used \(40 tokens\)/);
+  assert.match(md, /Usage: 2 calls, 100 tokens \(40 cached, 10 thinking\), about \$0.0123 at the configured price; cache used \(40 tokens\)/);
 });
 
 test("usageLine says when cost is unknown", () => {
