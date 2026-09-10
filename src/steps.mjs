@@ -74,6 +74,21 @@ export function secretFrom(name, fileEnv = {}) {
 }
 
 /**
+ * The first visible match for a selector, falling back to the first match. A
+ * responsive page often renders the same control twice (a desktop and a mobile
+ * header, say) with one hidden, and a click on the hidden one only times out.
+ */
+export async function visibleFirst(page, selector) {
+  const all = page.locator(selector);
+  const count = await all.count();
+  for (let i = 0; i < count; i += 1) {
+    const candidate = all.nth(i);
+    if (await candidate.isVisible()) return candidate;
+  }
+  return all.first();
+}
+
+/**
  * Runs steps on a page. Secrets come from `secrets` (a map of env var name to
  * value); a fill whose envVar is missing throws a clear error naming the variable,
  * never its value. Returns a short human log of what was done, without values.
@@ -85,19 +100,19 @@ export async function runSteps(page, steps, { base, secrets = {} } = {}) {
       await page.goto(new URL(step.goto, base).toString(), { waitUntil: "networkidle", timeout: 60_000 }).catch(() => page.goto(new URL(step.goto, base).toString(), { waitUntil: "load" }));
       log.push(`goto ${step.goto}`);
     } else if (step.click) {
-      await page.locator(step.click).first().click({ timeout: 15_000 });
+      await (await visibleFirst(page, step.click)).click({ timeout: 15_000 });
       log.push(`click ${step.click}`);
     } else if (step.hover) {
-      await page.locator(step.hover).first().hover({ timeout: 15_000 });
+      await (await visibleFirst(page, step.hover)).hover({ timeout: 15_000 });
       log.push(`hover ${step.hover}`);
     } else if (step.focus) {
-      await page.locator(step.focus).first().focus({ timeout: 15_000 });
+      await (await visibleFirst(page, step.focus)).focus({ timeout: 15_000 });
       log.push(`focus ${step.focus}`);
     } else if (step.fill) {
       const { selector, value, envVar } = step.fill;
       const text = envVar ? secretFrom(envVar, secrets) : value;
       if (envVar && text == null) throw new Error(`fill needs the environment variable ${envVar}, which is not set`);
-      await page.locator(selector).first().fill(text, { timeout: 15_000 });
+      await (await visibleFirst(page, selector)).fill(text, { timeout: 15_000 });
       log.push(envVar ? `fill ${selector} from ${envVar}` : `fill ${selector}`);
     } else if (step.press) {
       await page.keyboard.press(step.press);
@@ -106,7 +121,7 @@ export async function runSteps(page, steps, { base, secrets = {} } = {}) {
       await page.waitForTimeout(step.wait);
       log.push(`wait ${step.wait}ms`);
     } else if (step.waitFor) {
-      await page.locator(step.waitFor).first().waitFor({ state: "visible", timeout: 30_000 });
+      await (await visibleFirst(page, step.waitFor)).waitFor({ state: "visible", timeout: 30_000 });
       log.push(`waitFor ${step.waitFor}`);
     } else if (step.waitForURL) {
       await page.waitForURL(step.waitForURL, { timeout: 30_000 });
