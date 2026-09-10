@@ -1,0 +1,181 @@
+#!/usr/bin/env node
+import path from "node:path";
+import { parseArgs } from "node:util";
+import { loadConfig, init } from "../src/config.mjs";
+import { capture } from "../src/capture.mjs";
+import { critique } from "../src/critique.mjs";
+import { compare } from "../src/compare.mjs";
+import { listModels } from "../src/gemini.mjs";
+import { usageLine } from "../src/report.mjs";
+
+const HELP = `ui-critic: a second pair of eyes on a UI, for coding agents and humans.
+
+Commands
+  init       [--base <url>]                          write a starter ui-critic.config.json and brief
+  models     [--filter flash]                        list vision-capable Gemini models
+  capture    --base <url> --label <name>             screenshot every route at every viewport
+  critique   --in <capture dir>                      ranked findings, scores, priorities
+  compare    --before <dir> --after <dir>            what improved, regressed, is still open
+  run        --base <url> --label <name>             capture then critique, in one go
+  verify     --before <dir> --base <url> [--label after]   capture "after" then compare
+
+Options (flags win over env, env over ui-critic.config.json, file over defaults)
+  --config <file>  --routes /,/shop  --out <dir>  --brief <file>  --model <id>
+  --thinking-level off|low|medium|high   --include-thoughts   --no-cache   --ttl <seconds>
+  --temperature <0..2>   --json (machine-readable summary on stdout)
+  --fail-on regressed|worse   (compare/verify: exit 2 when any page matches)
+
+Environment: GEMINI_API_KEY (required, never stored), GEMINI_MODEL, UI_CRITIC_THINKING,
+UI_CRITIC_CACHE=0, UI_CRITIC_OUT.
+`;
+
+const [cmd, ...rest] = process.argv.slice(2);
+const { values: flags } = parseArgs({
+  args: rest,
+  allowPositionals: true,
+  options: {
+    base: { type: "string" },
+    label: { type: "string" },
+    routes: { type: "string" },
+    out: { type: "string" },
+    config: { type: "string" },
+    brief: { type: "string" },
+    model: { type: "string" },
+    in: { type: "string" },
+    before: { type: "string" },
+    after: { type: "string" },
+    filter: { type: "string" },
+    "thinking-level": { type: "string" },
+    "include-thoughts": { type: "boolean" },
+    "no-cache": { type: "boolean" },
+    ttl: { type: "string" },
+    temperature: { type: "string" },
+    json: { type: "boolean" },
+    "fail-on": { type: "string" },
+    help: { type: "boolean", short: "h" },
+  },
+});
+
+function emit(config, human, machine) {
+  if (config.json) process.stdout.write(JSON.stringify(machine, null, 2) + "\n");
+  else process.stdout.write(human + "\n");
+}
+
+function gate(config, results) {
+  if (!config.failOn) return;
+  const hit = results.filter((r) => (config.failOn === "regressed" ? r.regressed.length > 0 : r.verdict === "worse"));
+  if (hit.length) {
+    process.stderr.write(`ui-critic: --fail-on ${config.failOn} matched ${hit.length} page(s)\n`);
+    process.exitCode = 2;
+  }
+}
+
+async function doCapture(config, label) {
+  if (!config.base) throw new Error("capture needs --base <url> (or base in the config file)");
+  if (!label) throw new Error("capture needs --label <name>, for example before or after");
+  return capture({ ...config, label });
+}
+
+async function doCritique(config, dir) {
+  const result = await critique({ dir, config });
+  emit(
+    config,
+    [
+      `critique written:\n  ${result.jsonPath}\n  ${result.mdPath}`,
+      `score ${result.overall.score}/100, revamp needed: ${result.overall.revamp_needed}`,
+      `verdict: ${result.overall.verdict}`,
+      usageLine(result.usage),
+    ].join("\n"),
+    {
+      command: "critique",
+      dir,
+      score: result.overall.score,
+      revampNeeded: result.overall.revamp_needed,
+      topPriorities: result.overall.top_priorities,
+      pages: result.pages.map((p) => ({ route: p.route, score: p.score, findings: p.findings.length })),
+      usage: result.usage,
+      files: { json: result.jsonPath, md: result.mdPath },
+    },
+  );
+  return result;
+}
+
+async function doCompare(config, before, after) {
+  const result = await compare({ before, after, config });
+  emit(
+    config,
+    [
+      `comparison written:\n  ${result.jsonPath}\n  ${result.mdPath}`,
+      ...result.results.map((r) => `  ${r.viewport.padEnd(8)} ${r.route.padEnd(44)} ${r.verdict}`),
+      usageLine(result.usage),
+    ].join("\n"),
+    {
+      command: "compare",
+      before,
+      after,
+      results: result.results.map((r) => ({ route: r.route, viewport: r.viewport, verdict: r.verdict, regressed: r.regressed.length, improved: r.improved.length })),
+      usage: result.usage,
+      files: { json: result.jsonPath, md: result.mdPath },
+    },
+  );
+  gate(config, result.results);
+  return result;
+}
+
+async function main() {
+  if (!cmd || flags.help) {
+    process.stdout.write(HELP);
+    return;
+  }
+  if (cmd === "init") {
+    const written = await init({ base: flags.base });
+    process.stdout.write(written.length ? `wrote:\n  ${written.join("\n  ")}\n` : "nothing to do: config and brief already exist\n");
+    return;
+  }
+  const config = await loadConfig(flags);
+  switch (cmd) {
+    case "models": {
+      const models = await listModels(flags.filter);
+      if (config.json) process.stdout.write(JSON.stringify(models, null, 2) + "\n");
+      else for (const m of models) process.stdout.write(`${m.name}\t${m.displayName}\n`);
+      return;
+    }
+    case "capture": {
+      const manifest = await doCapture(config, config.label);
+      emit(config, `captured ${manifest.shots.length} screenshots into ${manifest.dir}`, { command: "capture", dir: manifest.dir, shots: manifest.shots.length });
+      return;
+    }
+    case "critique": {
+      if (!flags.in) throw new Error("critique needs --in <capture dir>");
+      await doCritique(config, flags.in);
+      return;
+    }
+    case "compare": {
+      if (!flags.before || !flags.after) throw new Error("compare needs --before <dir> --after <dir>");
+      await doCompare(config, flags.before, flags.after);
+      return;
+    }
+    case "run": {
+      const manifest = await doCapture(config, config.label);
+      process.stderr.write(`captured ${manifest.shots.length} screenshots into ${manifest.dir}\n`);
+      await doCritique(config, manifest.dir);
+      return;
+    }
+    case "verify": {
+      if (!flags.before) throw new Error("verify needs --before <capture dir> and --base <url>");
+      const manifest = await doCapture(config, config.label ?? "after");
+      process.stderr.write(`captured ${manifest.shots.length} screenshots into ${manifest.dir}\n`);
+      await doCompare(config, flags.before, manifest.dir);
+      return;
+    }
+    default:
+      process.stdout.write(HELP);
+      process.exitCode = 1;
+  }
+}
+
+main().catch((err) => {
+  console.error(`ui-critic: ${err.message}`);
+  process.exitCode = 1;
+});
+
