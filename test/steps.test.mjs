@@ -4,7 +4,7 @@ import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { stepProblems, readEnvFile, secretFrom, normalizeRoute } from "../src/steps.mjs";
-import { routeSlug, scenarioLabel } from "../src/capture.mjs";
+import { routeSlug, scenarioLabel, scenariosAt } from "../src/capture.mjs";
 import { DEFAULTS, merge, validate } from "../src/config.mjs";
 
 test("stepProblems accepts the vocabulary and rejects malformed steps", () => {
@@ -31,6 +31,9 @@ test("routes normalise and scenarios label and slug cleanly", () => {
   assert.equal(scenarioLabel("/shop", "filters-open"), "/shop [filters-open]");
   assert.equal(scenarioLabel("/shop"), "/shop");
   assert.equal(routeSlug("/shop?q=wig"), "shop-q-q-wig");
+  const all = [{ name: "a" }, { name: "b", viewports: ["mobile"] }];
+  assert.deepEqual(scenariosAt(all, "desktop").map((s) => s.name), ["a"]);
+  assert.deepEqual(scenariosAt(all, "mobile").map((s) => s.name), ["a", "b"]);
 });
 
 test("config validates scenarios and refuses literal passwords in auth steps", () => {
@@ -39,4 +42,5 @@ test("config validates scenarios and refuses literal passwords in auth steps", (
   assert.throws(() => validate(merge(DEFAULTS, { scenarios: [{ name: "x", route: "/", steps: [{ wait: -5 }] }] })), /non-negative/);
   assert.throws(() => validate(merge(DEFAULTS, { auth: { mode: "form", steps: [{ fill: { selector: "input[name=password]", value: "hunter2" } }] } })), /literal password/);
   assert.throws(() => validate(merge(DEFAULTS, { auth: { mode: "cookie" } })), /auth.mode/);
+  assert.throws(() => validate(merge(DEFAULTS, { scenarios: [{ name: "x", route: "/", steps: [], viewports: ["tv"] }] })), /unknown viewport/);
 });

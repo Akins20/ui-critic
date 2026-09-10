@@ -59,7 +59,8 @@ route, run a few steps and shoot the result, which is reviewed as its own page n
 `route [scenario]`: a filter sheet opened, a plan length pressed, a wishlist toggled, a
 card hovered, a link focused from the keyboard, an invalid form submitted, an empty search.
 The step vocabulary is `goto`, `click`, `hover`, `focus`, `fill`, `press`, `wait`,
-`waitFor`, `waitForURL` and `scroll`, with Playwright selectors.
+`waitFor`, `waitForURL` and `scroll`, with Playwright selectors. A scenario that only makes
+sense at some sizes (a mobile filter sheet, a desktop hover) lists them in `viewports`.
 
 ```json
 {

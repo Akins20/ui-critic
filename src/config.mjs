@@ -171,6 +171,10 @@ export function validate(cfg) {
     if (typeof s.route !== "string" || !s.route) throw new Error(`scenario ${s.name} needs a route`);
     const problems = stepProblems(s.steps, `scenario ${s.name} steps`);
     if (problems.length) throw new Error(problems.join("; "));
+    if (s.viewports !== undefined) {
+      if (!Array.isArray(s.viewports) || s.viewports.length === 0) throw new Error(`scenario ${s.name} viewports must be a non-empty list`);
+      for (const name of s.viewports) if (!cfg.viewports[name]) throw new Error(`scenario ${s.name} names an unknown viewport ${name}`);
+    }
   });
   if (cfg.auth) {
     if (!["form", "storageState"].includes(cfg.auth.mode)) throw new Error("auth.mode must be form or storageState");

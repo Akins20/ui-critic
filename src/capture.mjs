@@ -181,6 +181,11 @@ async function openAuthContext(browser, vp, auth, base, secrets) {
   }
 }
 
+/** Scenarios that apply at a viewport: all of them unless the scenario lists viewports. */
+export function scenariosAt(scenarios, viewportName) {
+  return scenarios.filter((s) => !s.viewports || s.viewports.includes(viewportName));
+}
+
 /**
  * Captures every route and scenario at every viewport: an above-the-fold PNG
  * (what a visitor sees first), a full-page JPEG (layout and rhythm) and a measured
@@ -207,7 +212,7 @@ export async function capture({ base, routes, scenarios = [], auth = null, viewp
         shots.push(await captureRoute({ page, base, route: entry.path, viewportName, dir, hideSelectors }));
         process.stderr.write(`  ${viewportName.padEnd(8)} ${entry.path}\n`);
       }
-      for (const scenario of scenarios.filter((s) => !s.auth)) {
+      for (const scenario of scenariosAt(scenarios, viewportName).filter((s) => !s.auth)) {
         const shot = await captureScenario({ page, base, scenario, viewportName, dir, hideSelectors, secrets });
         shots.push(shot);
         process.stderr.write(`  ${viewportName.padEnd(8)} ${shot.route}${shot.stepError ? ` (step failed: ${shot.stepError.slice(0, 80)})` : ""}\n`);
@@ -215,7 +220,7 @@ export async function capture({ base, routes, scenarios = [], auth = null, viewp
       await anon.close();
 
       const authEntries = entries.filter((e) => e.auth);
-      const authScenarios = scenarios.filter((s) => s.auth);
+      const authScenarios = scenariosAt(scenarios, viewportName).filter((s) => s.auth);
       if (authEntries.length || authScenarios.length) {
         const { context, reason } = await openAuthContext(browser, vp, auth, base, secrets);
         if (!context) {
