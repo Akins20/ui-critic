@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { thinkingConfig, usageOf, estimateCost, GeminiClient } from "../src/gemini.mjs";
+import { thinkingConfig, usageOf, estimateCost, nextOutputBudget, MAX_OUTPUT_TOKENS_CEILING, GeminiClient } from "../src/gemini.mjs";
 
 test("thinkingConfig maps levels, budgets and thoughts", () => {
   assert.deepEqual(thinkingConfig({ level: "high" }), { thinkingLevel: "high" });
@@ -51,4 +51,11 @@ test("summary reports an unknown cost when pricing is missing", () => {
   assert.equal(s.estimatedCostUSD, null);
   assert.equal(s.pricingKnown, false);
   assert.equal(s.cache.used, false);
+});
+
+test("nextOutputBudget doubles up to the ceiling and then stops", () => {
+  assert.equal(nextOutputBudget(8192), 16384);
+  assert.equal(nextOutputBudget(40000), MAX_OUTPUT_TOKENS_CEILING);
+  assert.equal(nextOutputBudget(MAX_OUTPUT_TOKENS_CEILING), null);
+  assert.equal(nextOutputBudget(100, 150), 150);
 });

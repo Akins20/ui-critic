@@ -16,6 +16,7 @@ test("defaults cover every knob", () => {
   assert.equal(DEFAULTS.cache.enabled, true);
   assert.ok(DEFAULTS.cache.minTokens > 0);
   assert.equal(DEFAULTS.generation.temperature, 0.3);
+  assert.equal(DEFAULTS.generation.maxOutputTokens, 32768);
   assert.deepEqual(DEFAULTS.routes, ["/"]);
 });
 

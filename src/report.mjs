@@ -29,7 +29,9 @@ export function renderCritique(result) {
   lines.push(`Model ${result.model}, reviewed ${result.reviewedAt}`);
   lines.push(usageLine(result.usage));
   lines.push("");
-  lines.push(`## Overall: ${result.overall.score}/100, revamp needed: ${result.overall.revamp_needed ? "yes" : "no"}`);
+  const score = result.overall.score == null ? "n/a" : `${result.overall.score}/100`;
+  const revamp = result.overall.revamp_needed == null ? "n/a" : result.overall.revamp_needed ? "yes" : "no";
+  lines.push(`## Overall: ${score}, revamp needed: ${revamp}`);
   lines.push(result.overall.verdict);
   lines.push("");
   lines.push("### Top priorities");

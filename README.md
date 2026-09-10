@@ -87,6 +87,15 @@ is also stored as an explicit context cache for the run (created when it is at l
 shared screenshots and brief are paid for once at the cached rate instead of once per
 call. Any cache failure falls back to inline, with the reason recorded in the report.
 
+### Resilience
+
+Thinking tokens count against the output budget on Gemini 3.x, so the default
+`generation.maxOutputTokens` is 32768 and a response cut off at the budget is retried
+with double the budget up to 65536. Every finished page is checkpointed to
+`critique.partial.json`; a rerun on the same capture reuses those pages and only pays for
+what is missing, and if the site-level pass fails the per-page results are still written
+before the error is raised.
+
 ### Cost tracing
 
 Every call's tokens (prompt, cached, output, thinking), duration, model, thinking config

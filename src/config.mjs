@@ -32,7 +32,7 @@ export const DEFAULTS = {
   hideSelectors: [],
   thinking: { level: "high", budget: undefined, includeThoughts: false },
   cache: { enabled: true, ttlSeconds: 3600, minTokens: 2048, keep: false },
-  generation: { temperature: 0.3, maxOutputTokens: 8192 },
+  generation: { temperature: 0.3, maxOutputTokens: 32768 },
   pricing: {},
   ledger: "usage.jsonl",
   json: false,

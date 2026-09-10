@@ -74,6 +74,8 @@ const OVERALL = {
   required: ["verdict", "score", "revamp_needed", "consistency_findings", "top_priorities"],
 };
 
+const PARTIAL_FILE = "critique.partial.json";
+
 function groupByRoute(shots) {
   const map = new Map();
   for (const s of shots) {
@@ -88,13 +90,32 @@ export function briefSection(brief) {
 }
 
 /**
+ * Loads the per-page results a previous, interrupted run checkpointed for this
+ * exact capture (same capturedAt and model), so a rerun pays only for what is
+ * missing. Anything else is ignored.
+ */
+async function loadPartial(dir, manifest, model) {
+  try {
+    const partial = JSON.parse(await readFile(path.join(dir, PARTIAL_FILE), "utf8"));
+    if (partial.capturedAt !== manifest.capturedAt || partial.model !== model) return {};
+    return partial.pages ?? {};
+  } catch {
+    return {};
+  }
+}
+
+/**
  * Reviews one capture set. The stable prefix (rules, brief, and every page's first
  * screen labelled by page and viewport) goes into an explicit context cache when
  * possible, so each page pass only adds that page's full-page captures and its task,
  * and the site pass adds only its task. Without a cache the same prefix is sent
- * inline, in the same order, so implicit prefix caching still applies. Writes
- * critique.json, critique.md and, when thoughts are kept, thoughts.md next to the
- * screenshots.
+ * inline, in the same order, so implicit prefix caching still applies.
+ *
+ * Every finished page is checkpointed to critique.partial.json, and a rerun on the
+ * same capture resumes from it. If the site pass fails, the per-page results are
+ * still written (critique.json with the failure recorded) before the error is
+ * raised, so paid-for work is never lost. Writes critique.json, critique.md and, when
+ * thoughts are kept, thoughts.md next to the screenshots.
  */
 export async function critique({ dir, config }) {
   const manifest = JSON.parse(await readFile(path.join(dir, "manifest.json"), "utf8"));
@@ -114,10 +135,19 @@ export async function critique({ dir, config }) {
   }
   const cached = await client.ensureCache(prefix, `ui-critic ${manifest.label}`);
   const thoughtLog = [];
+  const done = await loadPartial(dir, manifest, config.model);
+  const partialPath = path.join(dir, PARTIAL_FILE);
+  const checkpoint = () =>
+    writeFile(partialPath, JSON.stringify({ capturedAt: manifest.capturedAt, model: config.model, pages: done }, null, 2));
 
   try {
     const pages = [];
     for (const [route, shots] of groupByRoute(manifest.shots)) {
+      if (done[route]) {
+        pages.push(done[route]);
+        process.stderr.write(`  reused ${route} from checkpoint: score ${done[route].score}, ${done[route].findings.length} findings\n`);
+        continue;
+      }
       const parts = cached ? [] : [...prefix];
       parts.push(
         text(
@@ -128,7 +158,10 @@ export async function critique({ dir, config }) {
       const { data, thoughts } = await client.generateJSON({ parts, schema: PAGE, op: `page:${route}` });
       const slug = routeSlug(route);
       data.findings = (data.findings ?? []).map((f, i) => ({ id: `${slug}-${i + 1}`, ...f, page: route }));
-      pages.push({ route, ...data });
+      const page = { route, ...data };
+      pages.push(page);
+      done[route] = page;
+      await checkpoint();
       if (thoughts) thoughtLog.push(`## ${route}\n\n${thoughts}`);
       process.stderr.write(`  reviewed ${route}: score ${data.score}, ${data.findings.length} findings\n`);
     }
@@ -140,13 +173,27 @@ export async function critique({ dir, config }) {
     const parts = cached ? [] : [...prefix];
     parts.push(
       text(
-        `## Task\nUsing the first screen of every page at every viewport, judge the whole site: consistency of type scale, spacing rhythm, components and tone across pages; whether a redesign is warranted or targeted fixes suffice (revamp_needed); and the five changes with the highest impact for the least effort across the site. Do not repeat per-page findings unless they are cross-page patterns. Per-page findings already recorded: ${seen}`,
+        `## Task\nUsing the first screen of every page at every viewport, judge the whole site: consistency of type scale, spacing rhythm, components and tone across pages; whether a redesign is warranted or targeted fixes suffice (revamp_needed); and the five changes with the highest impact for the least effort across the site. Keep consistency_findings to genuine cross-page patterns (at most six) and do not repeat per-page findings. Per-page findings already recorded: ${seen}`,
       ),
     );
-    const site = await client.generateJSON({ parts, schema: OVERALL, op: "site" });
-    const overall = site.data;
-    overall.consistency_findings = (overall.consistency_findings ?? []).map((f, i) => ({ id: `site-${i + 1}`, ...f }));
-    if (site.thoughts) thoughtLog.push(`## site\n\n${site.thoughts}`);
+
+    let overall;
+    let siteError = null;
+    try {
+      const site = await client.generateJSON({ parts, schema: OVERALL, op: "site" });
+      overall = site.data;
+      overall.consistency_findings = (overall.consistency_findings ?? []).map((f, i) => ({ id: `site-${i + 1}`, ...f }));
+      if (site.thoughts) thoughtLog.push(`## site\n\n${site.thoughts}`);
+    } catch (err) {
+      siteError = err.message;
+      overall = {
+        verdict: `site pass failed (${err.message}); per-page results below are complete`,
+        score: null,
+        revamp_needed: null,
+        consistency_findings: [],
+        top_priorities: [],
+      };
+    }
 
     const result = {
       tool: "ui-critic",
@@ -157,12 +204,14 @@ export async function critique({ dir, config }) {
       overall,
       pages,
       usage: client.summary(),
+      ...(siteError ? { error: siteError } : {}),
     };
     const jsonPath = path.join(dir, "critique.json");
     const mdPath = path.join(dir, "critique.md");
     await writeFile(jsonPath, JSON.stringify(result, null, 2));
     await writeFile(mdPath, renderCritique(result));
     if (thoughtLog.length) await writeFile(path.join(dir, "thoughts.md"), thoughtLog.join("\n\n") + "\n");
+    if (siteError) throw new Error(`site pass failed: ${siteError} (per-page results were written to ${jsonPath}; rerun to retry the site pass)`);
     return { ...result, jsonPath, mdPath };
   } finally {
     await client.close();

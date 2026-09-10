@@ -5,6 +5,9 @@ const API = "https://generativelanguage.googleapis.com/v1beta";
 const RETRY_STATUSES = new Set([429, 500, 502, 503, 504]);
 const BACKOFF_MS = [0, 3000, 8000, 15000];
 
+/** The largest output budget the escalation on MAX_TOKENS will climb to. */
+export const MAX_OUTPUT_TOKENS_CEILING = 65_536;
+
 /** The key comes from the environment only; it is never read from disk or logged. */
 function apiKey() {
   const key = process.env.GEMINI_API_KEY;
@@ -50,6 +53,15 @@ export function thinkingConfig(thinking = {}) {
   else if (thinking.level) out.thinkingLevel = thinking.level;
   if (thinking.includeThoughts) out.includeThoughts = true;
   return Object.keys(out).length ? out : undefined;
+}
+
+/**
+ * The output budget to retry with after a MAX_TOKENS truncation: double, up to the
+ * ceiling; null when the ceiling has already been reached, so the caller stops.
+ */
+export function nextOutputBudget(current, ceiling = MAX_OUTPUT_TOKENS_CEILING) {
+  if (current >= ceiling) return null;
+  return Math.min(current * 2, ceiling);
 }
 
 /** Normalises usageMetadata into plain counts. */
@@ -157,26 +169,29 @@ export class GeminiClient {
   /**
    * One structured call: parts (text and images) after the cached prefix, a
    * response schema the model must satisfy, and parsed JSON back, plus the model's
-   * thoughts when includeThoughts is on. Transient failures are retried with backoff;
-   * a blocked prompt or an empty candidate is reported with its reason.
+   * thoughts when includeThoughts is on. Transient failures are retried with
+   * backoff. A response cut off by the output budget (thinking tokens count against
+   * it on Gemini 3.x) is retried with a doubled budget up to the ceiling, and a
+   * blocked prompt or an empty candidate is reported with its reason.
    */
   async generateJSON({ parts, schema, op = "call", temperature, maxOutputTokens }) {
-    const body = {
-      contents: [{ role: "user", parts }],
-      generationConfig: {
-        temperature: temperature ?? this.generation.temperature ?? 0.3,
-        maxOutputTokens: maxOutputTokens ?? this.generation.maxOutputTokens ?? 8192,
-        responseMimeType: "application/json",
-        responseSchema: schema,
-      },
-    };
+    let budget = maxOutputTokens ?? this.generation.maxOutputTokens ?? 32_768;
     const tc = thinkingConfig(this.thinking);
-    if (tc) body.generationConfig.thinkingConfig = tc;
-    if (this.cacheName) body.cachedContent = this.cacheName;
-
     let lastErr;
     for (let attempt = 0; attempt < BACKOFF_MS.length; attempt++) {
       if (attempt) await new Promise((r) => setTimeout(r, BACKOFF_MS[attempt]));
+      const body = {
+        contents: [{ role: "user", parts }],
+        generationConfig: {
+          temperature: temperature ?? this.generation.temperature ?? 0.3,
+          maxOutputTokens: budget,
+          responseMimeType: "application/json",
+          responseSchema: schema,
+        },
+      };
+      if (tc) body.generationConfig.thinkingConfig = tc;
+      if (this.cacheName) body.cachedContent = this.cacheName;
+
       const started = Date.now();
       const res = await fetch(`${API}/models/${this.model}:generateContent`, {
         method: "POST",
@@ -195,41 +210,51 @@ export class GeminiClient {
       const thoughts = allParts.filter((p) => p.thought).map((p) => p.text ?? "").join("\n");
       const raw = allParts.filter((p) => !p.thought).map((p) => p.text ?? "").join("");
       const json = raw.replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/, "");
+      const usage = usageOf(out.usageMetadata);
       let data;
       try {
         data = JSON.parse(json);
       } catch {
+        await this.record({ op, usage, tc, started, finishReason: candidate.finishReason, budget, ok: false });
+        if (candidate.finishReason === "MAX_TOKENS") {
+          const next = nextOutputBudget(budget);
+          if (next === null) throw new Error(`gemini: output still truncated at the ${budget} token ceiling (${op})`);
+          process.stderr.write(`  ${op}: output hit ${budget} tokens, retrying with ${next}\n`);
+          budget = next;
+          continue;
+        }
         lastErr = new Error(`gemini: response was not valid JSON (finishReason ${candidate.finishReason})`);
         continue;
       }
-      const usage = usageOf(out.usageMetadata);
-      const record = {
-        ts: new Date().toISOString(),
-        run: this.runLabel,
-        model: this.model,
-        op,
-        ...usage,
-        costUSD: estimateCost(usage, this.price),
-        cached: Boolean(this.cacheName),
-        thinking: tc ?? null,
-        durationMs: Date.now() - started,
-        finishReason: candidate.finishReason,
-      };
-      this.calls.push(record);
-      await this.ledger(record);
+      await this.record({ op, usage, tc, started, finishReason: candidate.finishReason, budget, ok: true });
       return { data, usage, thoughts, finishReason: candidate.finishReason };
     }
     throw lastErr ?? new Error("gemini: request failed");
   }
 
-  /** Appends one call record to the run ledger (JSON lines), when a path is set. */
-  async ledger(record) {
+  /** Records one call in memory and, when a ledger path is set, in the JSON-lines ledger. */
+  async record({ op, usage, tc, started, finishReason, budget, ok }) {
+    const entry = {
+      ts: new Date().toISOString(),
+      run: this.runLabel,
+      model: this.model,
+      op,
+      ...usage,
+      costUSD: estimateCost(usage, this.price),
+      cached: Boolean(this.cacheName),
+      thinking: tc ?? null,
+      maxOutputTokens: budget,
+      durationMs: Date.now() - started,
+      finishReason,
+      ok,
+    };
+    this.calls.push(entry);
     if (!this.ledgerPath) return;
     await mkdir(path.dirname(this.ledgerPath), { recursive: true });
-    await appendFile(this.ledgerPath, JSON.stringify(record) + "\n");
+    await appendFile(this.ledgerPath, JSON.stringify(entry) + "\n");
   }
 
-  /** Totals for the run: tokens by kind, estimated cost, cache status. */
+  /** Totals for the run: tokens by kind (truncated attempts included), estimated cost, cache status. */
   summary() {
     const totals = { calls: this.calls.length, promptTokens: 0, cachedTokens: 0, candidatesTokens: 0, thoughtsTokens: 0, totalTokens: 0 };
     let cost = 0;
