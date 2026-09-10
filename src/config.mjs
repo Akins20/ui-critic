@@ -68,7 +68,9 @@ export const DEFAULT_PRINCIPLES = [
  * shared screenshots); minTokens is the floor below which caching is skipped.
  * Prompts are also ordered stable-prefix-first so implicit prefix caching applies
  * even when explicit caching is off.
- * pricing: USD per one million tokens per model; unknown models report tokens only.
+ * pricing: USD per one million tokens per model, overriding the built-in table in
+ * src/pricing.mjs (which covers every current Gemini generation model); a model
+ * known to neither reports tokens only.
  */
 export const DEFAULTS = {
   base: undefined,
@@ -242,7 +244,7 @@ export async function init({ base, cwd = process.cwd() }) {
       base: base ?? "http://localhost:3000",
       routes: ["/"],
       hideSelectors: ["nextjs-portal"],
-      pricing: { [DEFAULTS.model]: { input: null, output: null, cached: null } },
+      pricing: {},
     });
     delete starter.label;
     delete starter.json;

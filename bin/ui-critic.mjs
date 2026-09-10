@@ -5,7 +5,10 @@ import { capture } from "../src/capture.mjs";
 import { critique } from "../src/critique.mjs";
 import { compare } from "../src/compare.mjs";
 import { listModels } from "../src/gemini.mjs";
+import path from "node:path";
 import { usageLine } from "../src/report.mjs";
+import { costReport, renderCostReport } from "../src/cost.mjs";
+import { resolvePrice, describePrice, PRICING_AS_OF, PRICING_SOURCE } from "../src/pricing.mjs";
 
 const HELP = `ui-critic: a second pair of eyes on a UI, for coding agents and humans.
 
@@ -17,6 +20,7 @@ Commands
   compare    --before <dir> --after <dir>            what improved, regressed, is still open
   run        --base <url> --label <name>             capture then critique, in one go
   verify     --before <dir> --base <url> [--label after]   capture "after" then compare
+  cost       [--out <dir>]                           total the usage ledger per run at today's prices
 
 The brief (ui-critic/brief.md by default) is required for critique, compare, run and
 verify: it tells the critic what the product is for and who it is for.
@@ -147,10 +151,24 @@ async function main() {
   }
   const config = await loadConfig(flags);
   switch (cmd) {
+    case "cost": {
+      const ledger = path.join(config.out, config.ledger);
+      const report = await costReport(ledger, config.pricing);
+      if (config.json) process.stdout.write(JSON.stringify(report, null, 2) + "\n");
+      else process.stdout.write(renderCostReport(report) + "\n");
+      break;
+    }
     case "models": {
       const models = await listModels(flags.filter);
-      if (config.json) process.stdout.write(JSON.stringify(models, null, 2) + "\n");
-      else for (const m of models) process.stdout.write(`${m.name}\t${m.displayName}\n`);
+      const priced = models.map((m) => {
+        const price = resolvePrice(m.name, config.pricing);
+        return { ...m, price: price ? describePrice(price) : null };
+      });
+      if (config.json) process.stdout.write(JSON.stringify(priced, null, 2) + "\n");
+      else {
+        for (const m of priced) process.stdout.write(`${m.name.padEnd(44)} ${m.displayName.padEnd(36)} ${m.price ?? "no price known"}\n`);
+        process.stdout.write(`\nBuilt-in prices as of ${PRICING_AS_OF} from ${PRICING_SOURCE}; override under "pricing" in the config.\n`);
+      }
       return;
     }
     case "capture": {

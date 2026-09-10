@@ -62,7 +62,7 @@ test("init writes a config with every default and a brief, and never overwrites"
   assert.equal(cfg.base, "http://localhost:4000");
   assert.equal(cfg.thinking.level, "high");
   assert.equal(cfg.cache.ttlSeconds, 3600);
-  assert.ok(cfg.pricing[cfg.model]);
+  assert.deepEqual(cfg.pricing, {});
   const brief = await readFile(path.join(dir, "ui-critic", "brief.md"), "utf8");
   assert.match(brief, /## Brand system/);
   const second = await init({ cwd: dir });

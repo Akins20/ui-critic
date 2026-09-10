@@ -18,7 +18,10 @@ function sortFindings(findings) {
 /** One line of token and cost accounting for a run. */
 export function usageLine(u) {
   if (!u) return "";
-  const cost = u.estimatedCostUSD == null ? "cost unknown (no pricing configured for this model)" : `about $${u.estimatedCostUSD.toFixed(4)}`;
+  const cost =
+    u.estimatedCostUSD == null
+      ? "cost unknown (no price known for this model; add it under pricing in the config)"
+      : `about $${u.estimatedCostUSD.toFixed(4)}${u.cacheStorageUSD ? ` incl. $${u.cacheStorageUSD.toFixed(4)} cache storage` : ""} at ${u.price ?? "the configured price"}`;
   const cache = u.cache?.used ? `cache used (${u.cache.tokens ?? "?"} tokens)` : `no cache (${u.cache?.reason ?? "off"})`;
   const thinking = u.thinking ? JSON.stringify(u.thinking) : "default";
   return `Usage: ${u.calls} calls, ${u.totalTokens} tokens (${u.cachedTokens} cached, ${u.thoughtsTokens} thinking), ${cost}; ${cache}; thinking ${thinking}`;

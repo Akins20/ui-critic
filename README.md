@@ -127,6 +127,7 @@ triage instead of obeying.
 | `compare --before dir --after dir` | per page and viewport: improved, regressed, still open |
 | `run --base url --label name` | capture then critique |
 | `verify --before dir --base url` | capture "after" then compare, in one step |
+| `cost [--out dir]` | total the usage ledger per run at today's prices |
 
 `--json` prints a machine-readable summary to stdout (for an agent to parse); the full
 reports are always written next to the screenshots. `--fail-on regressed` or
@@ -157,7 +158,7 @@ Every knob has a default. Resolution order, lowest to highest: built-in defaults
   "thinking": { "level": "high", "includeThoughts": false },
   "cache": { "enabled": true, "ttlSeconds": 3600, "minTokens": 2048, "keep": false },
   "generation": { "temperature": 0.3, "maxOutputTokens": 32768 },
-  "pricing": { "gemini-3.8-flash": { "input": null, "output": null, "cached": null } },
+  "pricing": {},
   "ledger": "usage.jsonl"
 }
 ```
@@ -199,8 +200,22 @@ before the error is raised.
 
 Every call's tokens (prompt, cached, output, thinking), duration, model, thinking config,
 output budget and cache state are appended to `<out>/usage.jsonl` and summarised in each
-report. Put your model's USD-per-million prices in `pricing` to get an estimated cost per
-run; without prices the tool reports tokens only and never invents a number.
+report, with an estimated cost in USD. Prices come from a built-in table of the official
+Gemini API price list (standard tier, text and image input, thinking billed as output,
+cached input at the cached rate, explicit-cache storage per hour, long-context rates
+above a model's threshold, and announced price changes by date). The table covers every
+current generation model and the previous one; `ui-critic models` shows the price each
+model would be billed at, and `ui-critic cost` totals the ledger per run at today's
+prices, so a run made before a price was known still gets a number.
+
+```json
+"pricing": { "gemini-3.8-flash": { "input": 0.75, "output": 3.75, "cached": 0.075, "storagePerHour": 0.5 } }
+```
+
+The config's `pricing` block overrides the table per model (exact id or a dash-delimited
+prefix, USD per million tokens). A model known to neither reports tokens only; the tool
+never invents a price. The built-in prices carry an "as of" date in the report so a stale
+table is visible.
 
 ## Using it from Claude Code
 

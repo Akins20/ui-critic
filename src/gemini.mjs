@@ -75,22 +75,8 @@ export function usageOf(meta = {}) {
   };
 }
 
-/**
- * Estimates the USD cost of one call from a per-million-token price table
- * { input, output, cached }. Cached prompt tokens are billed at the cached rate,
- * the rest of the prompt at the input rate, and thoughts count as output. Returns
- * null when no pricing is known for the model, so a cost is never invented.
- */
-export function estimateCost(usage, price) {
-  if (!price || price.input == null || price.output == null) return null;
-  const cachedRate = price.cached ?? price.input;
-  const uncached = Math.max(0, usage.promptTokens - usage.cachedTokens);
-  const cost =
-    (uncached / 1e6) * price.input +
-    (usage.cachedTokens / 1e6) * cachedRate +
-    ((usage.candidatesTokens + usage.thoughtsTokens) / 1e6) * price.output;
-  return Math.round(cost * 1e6) / 1e6;
-}
+import { resolvePrice, estimateCost, cacheStorageCost, describePrice } from "./pricing.mjs";
+export { estimateCost };
 
 /**
  * A client bound to one model and one run: it owns the optional context cache,
@@ -103,7 +89,9 @@ export class GeminiClient {
     this.thinking = thinking ?? {};
     this.generation = generation ?? {};
     this.cache = cache ?? { enabled: false };
-    this.price = pricing?.[model] ?? null;
+    // The config's pricing block wins over the built-in table; either way the
+    // price that applies on the day of the run is fixed at construction.
+    this.price = resolvePrice(model, pricing ?? {}, new Date());
     this.ledgerPath = ledgerPath;
     this.runLabel = runLabel ?? "";
     this.cacheName = null;
@@ -152,6 +140,7 @@ export class GeminiClient {
       const body = await res.json();
       this.cacheName = body.name;
       this.cacheTokens = body.usageMetadata?.totalTokenCount ?? tokens;
+      this.cacheCreatedAt = Date.now();
       return this.cacheName;
     } catch (err) {
       this.cacheSkipped = err.message;
@@ -160,8 +149,17 @@ export class GeminiClient {
   }
 
   /** Deletes the run's cache unless the config asks to keep it for later runs. */
+  /** Seconds the explicit cache has been (or will be) stored, for the storage charge. */
+  cacheSeconds() {
+    if (!this.cacheCreatedAt) return 0;
+    const alive = (this.cacheClosedAt ?? Date.now()) - this.cacheCreatedAt;
+    // A kept cache is billed until its TTL expires.
+    return this.cache.keep ? Math.max(alive / 1000, this.cache.ttlSeconds ?? 3600) : alive / 1000;
+  }
+
   async close() {
     if (!this.cacheName || this.cache.keep) return;
+    this.cacheClosedAt = Date.now();
     await fetch(`${API}/${this.cacheName}`, { method: "DELETE", headers: { "x-goog-api-key": apiKey() } }).catch(() => {});
     this.cacheName = null;
   }
@@ -241,6 +239,7 @@ export class GeminiClient {
       op,
       ...usage,
       costUSD: estimateCost(usage, this.price),
+      priceSource: this.price?.source ?? null,
       cached: Boolean(this.cacheName),
       thinking: tc ?? null,
       maxOutputTokens: budget,
@@ -264,11 +263,14 @@ export class GeminiClient {
       if (c.costUSD == null) costKnown = false;
       else cost += c.costUSD;
     }
+    const storage = cacheStorageCost(this.cacheTokens ?? 0, this.cacheSeconds(), this.price);
     return {
       model: this.model,
       ...totals,
-      estimatedCostUSD: costKnown ? Math.round(cost * 1e6) / 1e6 : null,
+      estimatedCostUSD: costKnown ? Math.round((cost + storage) * 1e6) / 1e6 : null,
+      cacheStorageUSD: costKnown ? storage : null,
       pricingKnown: Boolean(this.price),
+      price: this.price ? describePrice(this.price) : null,
       cache: this.cacheName
         ? { used: true, tokens: this.cacheTokens ?? null }
         : { used: false, reason: this.cache.enabled ? (this.cacheSkipped ?? "not needed") : "disabled" },
