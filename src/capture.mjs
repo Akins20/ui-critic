@@ -212,12 +212,17 @@ export async function capture({ base, routes, scenarios = [], auth = null, viewp
         shots.push(await captureRoute({ page, base, route: entry.path, viewportName, dir, hideSelectors }));
         process.stderr.write(`  ${viewportName.padEnd(8)} ${entry.path}\n`);
       }
+      await anon.close();
+      // Every scenario starts from a clean context, so a saved wishlist, a
+      // switched theme or a typed query never leaks into the next capture.
       for (const scenario of scenariosAt(scenarios, viewportName).filter((s) => !s.auth)) {
-        const shot = await captureScenario({ page, base, scenario, viewportName, dir, hideSelectors, secrets });
+        const fresh = await openContext(browser, vp);
+        const freshPage = await fresh.newPage();
+        const shot = await captureScenario({ page: freshPage, base, scenario, viewportName, dir, hideSelectors, secrets });
+        await fresh.close();
         shots.push(shot);
         process.stderr.write(`  ${viewportName.padEnd(8)} ${shot.route}${shot.stepError ? ` (step failed: ${shot.stepError.slice(0, 80)})` : ""}\n`);
       }
-      await anon.close();
 
       const authEntries = entries.filter((e) => e.auth);
       const authScenarios = scenariosAt(scenarios, viewportName).filter((s) => s.auth);
@@ -227,17 +232,21 @@ export async function capture({ base, routes, scenarios = [], auth = null, viewp
           skipped.push(...authEntries.map((e) => `${e.path} (${reason})`), ...authScenarios.map((s) => `${scenarioLabel(s.route, s.name)} (${reason})`));
           process.stderr.write(`  ${viewportName.padEnd(8)} signed-in pages skipped: ${reason}\n`);
         } else {
+          const session = await context.storageState();
           const authPage = await context.newPage();
           for (const entry of authEntries) {
             shots.push(await captureRoute({ page: authPage, base, route: entry.path, viewportName, dir, hideSelectors, auth: true }));
             process.stderr.write(`  ${viewportName.padEnd(8)} ${entry.path} (signed in)\n`);
           }
+          await context.close();
           for (const scenario of authScenarios) {
-            const shot = await captureScenario({ page: authPage, base, scenario, viewportName, dir, hideSelectors, secrets });
+            const fresh = await openContext(browser, vp, { storageState: session });
+            const freshPage = await fresh.newPage();
+            const shot = await captureScenario({ page: freshPage, base, scenario, viewportName, dir, hideSelectors, secrets });
+            await fresh.close();
             shots.push(shot);
             process.stderr.write(`  ${viewportName.padEnd(8)} ${shot.route} (signed in)${shot.stepError ? ` (step failed: ${shot.stepError.slice(0, 80)})` : ""}\n`);
           }
-          await context.close();
         }
       }
     }

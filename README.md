@@ -61,6 +61,8 @@ card hovered, a link focused from the keyboard, an invalid form submitted, an em
 The step vocabulary is `goto`, `click`, `hover`, `focus`, `fill`, `press`, `wait`,
 `waitFor`, `waitForURL` and `scroll`, with Playwright selectors. A scenario that only makes
 sense at some sizes (a mobile filter sheet, a desktop hover) lists them in `viewports`.
+Every scenario runs in a fresh browser context, so a saved wishlist or a switched theme
+never leaks into the next capture; signed-in scenarios reuse one login session.
 
 ```json
 {
