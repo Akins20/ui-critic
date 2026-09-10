@@ -7,9 +7,14 @@
  */
 export function auditScript() {
   const cs = (el) => getComputedStyle(el);
+  // Rendered and perceivable: laid out, not hidden, not faded out (an inactive
+  // carousel slide), and not inside an inert or aria-hidden subtree.
   const visible = (el) => {
     const r = el.getBoundingClientRect();
-    return r.width > 0 && r.height > 0 && cs(el).visibility !== "hidden";
+    if (!(r.width > 0 && r.height > 0)) return false;
+    const s = cs(el);
+    if (s.visibility === "hidden" || parseFloat(s.opacity) < 0.05) return false;
+    return !el.closest("[inert],[aria-hidden='true']");
   };
   const family = (el) => cs(el).fontFamily.split(",")[0].replace(/["']/g, "").trim();
   const hiddenVisually = (el) => {
@@ -55,7 +60,8 @@ export function auditScript() {
     .filter(visible)
     .map((e) => {
       const r = e.getBoundingClientRect();
-      const name = (e.getAttribute("aria-label") || e.textContent || e.getAttribute("placeholder") || e.value || "")
+      const label = e.labels && e.labels[0] ? e.labels[0].textContent : "";
+      const name = (e.getAttribute("aria-label") || label || e.textContent || e.getAttribute("placeholder") || e.value || "")
         .trim()
         .replace(/\s+/g, " ")
         .slice(0, 32);

@@ -79,7 +79,31 @@ async function shoot({ page, dir, slug, viewportName, route, label, extra = {} }
   const full = path.join(dir, `${slug}.${viewportName}.full.jpg`);
   const audit = path.join(dir, `${slug}.${viewportName}.audit.json`);
   await page.screenshot({ path: fold, fullPage: false });
+  // A full-page shot stretches the viewport, so a bar fixed to the bottom edge
+  // would be painted over the footer. Hide those for the full shot only; the
+  // first-screen capture shows them where a visitor sees them.
+  const hiddenFixed = await page.evaluate(() => {
+    let n = 0;
+    for (const el of document.querySelectorAll("body *")) {
+      const s = getComputedStyle(el);
+      if (s.position !== "fixed") continue;
+      const r = el.getBoundingClientRect();
+      if (r.height === 0 || r.bottom < window.innerHeight - 2 || r.top < 2) continue;
+      el.setAttribute("data-ui-critic-hidden", el.style.visibility || "");
+      el.style.visibility = "hidden";
+      n += 1;
+    }
+    return n;
+  });
   await page.screenshot({ path: full, fullPage: true, type: "jpeg", quality: 80 });
+  if (hiddenFixed > 0) {
+    await page.evaluate(() => {
+      for (const el of document.querySelectorAll("[data-ui-critic-hidden]")) {
+        el.style.visibility = el.getAttribute("data-ui-critic-hidden");
+        el.removeAttribute("data-ui-critic-hidden");
+      }
+    });
+  }
   let facts;
   try {
     facts = await page.evaluate(auditScript);
@@ -87,7 +111,7 @@ async function shoot({ page, dir, slug, viewportName, route, label, extra = {} }
     facts = { error: err.message };
   }
   await writeFile(audit, JSON.stringify(facts, null, 2));
-  return { route: label, path: route, url: page.url(), viewport: viewportName, title: await page.title(), fold, full, audit, ...extra };
+  return { route: label, path: route, url: page.url(), viewport: viewportName, title: await page.title(), fold, full, audit, hiddenFixed, ...extra };
 }
 
 /**

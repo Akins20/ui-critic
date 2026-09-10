@@ -155,7 +155,9 @@ export function followablePages(requests, manifest, maxPages) {
   const out = [];
   for (const r of requests) {
     if (r.kind !== "page") continue;
-    let route = r.target;
+    // A page request is a path or URL; anything after the first space is commentary.
+    let route = String(r.target ?? "").trim().split(/\s+/)[0];
+    if (!route) continue;
     try {
       if (/^https?:\/\//i.test(route)) {
         const u = new URL(route);
@@ -250,7 +252,7 @@ export async function critique({ dir, config }) {
     }
     parts.push(
       text(
-        `## Task\nReview ${shots[0].scenario ? `the state "${shots[0].scenario}" of the page ${shots[0].path}` : `the page ${route}`} ("${shots[0].title}")${shots[0].scenario ? `, captured after these steps: ${(shots[0].steps ?? []).join("; ") || "none"}${shots[0].stepError ? ` (a step failed: ${shots[0].stepError})` : ""}. Judge the state the interaction produced: the feedback, the affordance, what changed and whether it is clear` : ""}${shots[0].auth ? ". The visitor is signed in." : ""}. You already have its above-the-fold capture per viewport; here is the full-page capture per viewport (the whole scroll) and the measured facts. Name the page's real strengths first, then list findings, then account for every design discipline in coverage, then anything you still need in requests. Set page to "${route}".`,
+        `## Task\nReview ${shots[0].scenario ? `the state "${shots[0].scenario}" of the page ${shots[0].path}` : `the page ${route}`} ("${shots[0].title}")${shots[0].scenario ? `, captured after these steps: ${(shots[0].steps ?? []).join("; ") || "none"}${shots[0].stepError ? ` (a step failed: ${shots[0].stepError})` : ""}. Judge the state the interaction produced: the feedback, the affordance, what changed and whether it is clear` : ""}${shots[0].auth ? ". The visitor is signed in." : ""}. You already have its above-the-fold capture per viewport; here is the full-page capture per viewport (the whole scroll) and the measured facts. Full-page captures omit bars fixed to the bottom of the viewport (a sticky buy bar, a tab bar): judge those from the first-screen capture, and never report them as covering the footer. Name the page's real strengths first, then list findings, then account for every design discipline in coverage, then anything you still need in requests. Set page to "${route}".`,
       ),
     );
     for (const s of shots) {
