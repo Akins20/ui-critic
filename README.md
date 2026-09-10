@@ -58,7 +58,7 @@ Every knob has a default. Resolution order, lowest to highest: built-in defaults
   "hideSelectors": ["nextjs-portal"],
   "thinking": { "level": "high", "includeThoughts": false },
   "cache": { "enabled": true, "ttlSeconds": 3600, "minTokens": 2048, "keep": false },
-  "generation": { "temperature": 0.3, "maxOutputTokens": 8192 },
+  "generation": { "temperature": 0.3, "maxOutputTokens": 32768 },
   "pricing": { "gemini-3.8-flash": { "input": null, "output": null, "cached": null } },
   "ledger": "usage.jsonl"
 }
