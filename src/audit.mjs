@@ -45,8 +45,10 @@ export function auditScript() {
   const headings = Array.from(document.querySelectorAll("h1,h2,h3"))
     .slice(0, 24)
     .map((h) => `${h.tagName}: ${h.textContent.trim().replace(/\s+/g, " ").slice(0, 60)}${hiddenVisually(h) ? " (visually hidden)" : ""}`);
+  // Only rendered landmarks count: a responsive page keeps a hidden duplicate
+  // (a desktop and a mobile header, say) that assistive tech never exposes.
   const landmarks = ["header", "nav", "main", "footer", "aside", "form[role=search]"]
-    .map((s) => `${s}=${document.querySelectorAll(s).length}`)
+    .map((s) => `${s}=${Array.from(document.querySelectorAll(s)).filter(visible).length}`)
     .join(" ");
   const imgs = Array.from(document.images);
   const interactive = Array.from(document.querySelectorAll("a,button,[role=button],input,select,textarea"))
