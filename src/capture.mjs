@@ -8,7 +8,8 @@ const PLAYWRIGHT_PACKAGES = ["playwright", "@playwright/test", "playwright-core"
 /**
  * Loads a Playwright package from the project being reviewed first (so its
  * installed browsers are used), then from the tool's own resolution, accepting any
- * of the packages that export chromium. Playwright is optional: critique and compare
+ * of the packages that export chromium (a CommonJS build exposes it under default).
+ * Playwright is optional: critique and compare
  * work on any PNG or JPEG you already have, as long as a manifest.json describes them.
  */
 async function loadPlaywright() {
@@ -16,7 +17,8 @@ async function loadPlaywright() {
   for (const name of PLAYWRIGHT_PACKAGES) {
     try {
       const mod = await import(pathToFileURL(req.resolve(name)).href);
-      if (mod.chromium) return mod;
+      const pw = mod.chromium ? mod : mod.default;
+      if (pw && pw.chromium) return pw;
     } catch {
       // try the next candidate
     }
@@ -24,7 +26,8 @@ async function loadPlaywright() {
   for (const name of PLAYWRIGHT_PACKAGES) {
     try {
       const mod = await import(name);
-      if (mod.chromium) return mod;
+      const pw = mod.chromium ? mod : mod.default;
+      if (pw && pw.chromium) return pw;
     } catch {
       // try the next candidate
     }
