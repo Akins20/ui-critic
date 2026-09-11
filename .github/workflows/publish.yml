@@ -1,0 +1,38 @@
+name: publish
+
+# Publishes the package to npm when a version tag is pushed (v0.2.0, v0.3.0, ...).
+# Needs an npm automation token stored as the NPM_TOKEN repository secret; the
+# publish carries provenance, so npm shows the exact commit and workflow it came
+# from. Cut a release with: npm version minor && git push origin main --tags
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+      - name: Unit tests
+        run: npm test
+      - name: The tag must match package.json
+        run: |
+          expected="v$(node -p "require('./package.json').version")"
+          if [ "${GITHUB_REF_NAME}" != "$expected" ]; then
+            echo "tag ${GITHUB_REF_NAME} does not match package version ${expected}"
+            exit 1
+          fi
+      - name: Publish
+        run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

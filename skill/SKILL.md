@@ -12,7 +12,7 @@ not see the code or the product decisions, only what you give it.
 
 ## Prerequisites
 - `GEMINI_API_KEY` exported in the shell. Never paste it into files, prompts, logs or reports.
-- The CLI: `npx ui-critic` once published, or `node <absolute path>/ui-critic/bin/ui-critic.mjs`.
+- The CLI: `npx @akins20/ui-critic` (or `npm i -g @akins20/ui-critic`, which installs the `ui-critic` command), or from a checkout `node <absolute path>/ui-critic/bin/ui-critic.mjs`.
 - For capture: Playwright with Chromium in the project (`@playwright/test` counts). Without it,
   point `critique` at screenshots taken another way, described by a `manifest.json`.
 - A URL to review: production, a preview deployment, or the local dev server.

@@ -1,5 +1,5 @@
 {
-  "name": "ui-critic",
+  "name": "@akins20/ui-critic",
   "version": "0.2.0",
   "description": "A second pair of eyes for a UI: capture screenshots, get a ranked visual critique from Gemini, and compare before and after. Built so one coding agent (Claude Code) can ask another model for design review.",
   "type": "module",
@@ -12,13 +12,15 @@
     "templates",
     "skill",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "CHANGELOG.md"
   ],
   "engines": {
     "node": ">=20"
   },
   "scripts": {
-    "test": "node --test"
+    "test": "node --test",
+    "prepublishOnly": "npm test"
   },
   "peerDependencies": {
     "playwright": ">=1.40"
@@ -39,5 +41,17 @@
     "critique",
     "agent"
   ],
-  "license": "MIT"
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Akins20/ui-critic.git"
+  },
+  "homepage": "https://github.com/Akins20/ui-critic#readme",
+  "bugs": {
+    "url": "https://github.com/Akins20/ui-critic/issues"
+  },
+  "author": "Otesc <otesc.co@gmail.com>",
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  }
 }

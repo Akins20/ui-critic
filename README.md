@@ -12,13 +12,16 @@ terminal. Zero required dependencies beyond Node 20; Playwright is optional, for
 ## Quick start
 
 ```bash
+npm i -g @akins20/ui-critic                   # or run it with npx @akins20/ui-critic ...
 export GEMINI_API_KEY=...                     # your key; read from the environment only
-npx ui-critic init --base https://your.site   # writes ui-critic.config.json + ui-critic/brief.md
+ui-critic init --base https://your.site       # writes ui-critic.config.json + ui-critic/brief.md
 # fill in the brief: what the product is for and who it is for are required
-npx ui-critic run --label before --follow-requests
+ui-critic run --label before --follow-requests
 # make changes, then either deploy or run locally
-npx ui-critic verify --before ui-critic-out/before --base http://localhost:3000
+ui-critic verify --before ui-critic-out/before --base http://localhost:3000
 ```
+
+The package is `@akins20/ui-critic` on npm; the command it installs is `ui-critic`.
 
 `capture`, `run` and `verify` need Playwright with Chromium in the project
 (`npm i -D playwright && npx playwright install chromium`; `@playwright/test` and
