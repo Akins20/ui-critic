@@ -3,12 +3,41 @@
   "version": "0.1.0",
   "description": "A second pair of eyes for a UI: capture screenshots, get a ranked visual critique from Gemini, and compare before and after. Built so one coding agent (Claude Code) can ask another model for design review.",
   "type": "module",
-  "bin": { "ui-critic": "bin/ui-critic.mjs" },
-  "files": ["bin", "src", "templates", "skill", "README.md", "LICENSE"],
-  "engines": { "node": ">=20" },
-  "scripts": { "test": "node --test \"test/**/*.test.mjs\"" },
-  "peerDependencies": { "playwright": ">=1.40" },
-  "peerDependenciesMeta": { "playwright": { "optional": true } },
-  "keywords": ["gemini", "claude", "claude-code", "ui", "design-review", "screenshots", "playwright", "critique", "agent"],
+  "bin": {
+    "ui-critic": "bin/ui-critic.mjs"
+  },
+  "files": [
+    "bin",
+    "src",
+    "templates",
+    "skill",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node --test"
+  },
+  "peerDependencies": {
+    "playwright": ">=1.40"
+  },
+  "peerDependenciesMeta": {
+    "playwright": {
+      "optional": true
+    }
+  },
+  "keywords": [
+    "gemini",
+    "claude",
+    "claude-code",
+    "ui",
+    "design-review",
+    "screenshots",
+    "playwright",
+    "critique",
+    "agent"
+  ],
   "license": "MIT"
 }
