@@ -67,7 +67,8 @@ The critic never judges a generic store. Every request carries, in this order:
    base size, the text size histogram, the heading outline, landmarks, image alt coverage,
    interactive targets under 24px, the lowest-contrast visible text with its WCAG AA
    result, and the **runtime facts** a screenshot cannot show: console errors, uncaught
-   exceptions, failed requests, HTTP errors and cumulative layout shift. Measured facts are
+   exceptions, failed requests (not the ones the browser cancelled itself, such as
+   abandoned prefetches), HTTP errors and cumulative layout shift. Measured facts are
    ground truth for the critic, so it does not guess a contrast ratio or a font size.
 
 ## States, mini-features and signed-in pages

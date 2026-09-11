@@ -4,7 +4,7 @@ import { runPool, serialWriter } from "../src/pool.mjs";
 import { parseDecisions, decisionsSection, withholdSettled } from "../src/decisions.mjs";
 import { mergeAdjudication, gateHits } from "../src/compare.mjs";
 import { isReasoningModel, reasoningConfig, toStrictSchema, toInputItems, usageOf, readOutput } from "../src/openai.mjs";
-import { summarizeRuntime, redirectedAway } from "../src/capture.mjs";
+import { summarizeRuntime, redirectedAway, attachRuntimeCollectors } from "../src/capture.mjs";
 import { providerFor } from "../src/provider.mjs";
 import { resolvePrice } from "../src/pricing.mjs";
 
@@ -150,6 +150,30 @@ test("providers resolve from the model id unless configured, and OpenAI prices r
   assert.equal(price.key, "gpt-5.4-mini");
   assert.equal(price.output, 4.5);
   assert.equal(resolvePrice("gpt-5.4", {}, "2026-09-11").input, 2.5);
+});
+
+test("runtime collectors keep real failures and drop what the browser cancelled itself", async () => {
+  const handlers = {};
+  const fakePage = { on: (event, fn) => { handlers[event] = fn; }, evaluate: async () => 0.05 };
+  const rt = attachRuntimeCollectors(fakePage);
+  const failed = (url, errorText) => handlers.requestfailed({ url: () => url, failure: () => ({ errorText }) });
+  failed("https://site.test/shop?_rsc=abc", "net::ERR_ABORTED");
+  failed("https://site.test/font.woff2", "NS_BINDING_ABORTED");
+  failed("https://site.test/api/plans", "net::ERR_CONNECTION_REFUSED");
+  failed("http://localhost:3000/_next/webpack-hmr", "net::ERR_FAILED");
+  handlers.response({ url: () => "https://site.test/missing.png", status: () => 404 });
+  handlers.response({ url: () => "https://site.test/", status: () => 200 });
+  handlers.console({ type: () => "error", text: () => "boom" });
+  handlers.console({ type: () => "warning", text: () => "meh" });
+  handlers.pageerror(new Error("uncaught"));
+  const out = await rt.read();
+  assert.deepEqual(out.failedRequests, ["https://site.test/api/plans (net::ERR_CONNECTION_REFUSED)"]);
+  assert.deepEqual(out.httpErrors, ["404 https://site.test/missing.png"]);
+  assert.deepEqual(out.consoleErrors, ["boom"]);
+  assert.deepEqual(out.pageErrors, ["uncaught"]);
+  assert.equal(out.cls, 0.05);
+  rt.reset();
+  assert.deepEqual((await rt.read()).failedRequests, []);
 });
 
 test("runtime facts deduplicate and cap, and redirects are detected by path", () => {

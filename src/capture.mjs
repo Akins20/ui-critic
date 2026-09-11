@@ -77,6 +77,13 @@ async function settle(page, hideSelectors) {
 const NOISE = /webpack-hmr|hot-update|__nextjs|sockjs|\/_next\/static\/development|livereload/;
 
 /**
+ * Failure reasons that mean the browser or the page cancelled the request itself
+ * (an abandoned prefetch, a navigation away, media it decided not to need), which
+ * is not a failure of the page. Chromium, Firefox and WebKit each spell it their way.
+ */
+const ABORTED = /ERR_ABORTED|NS_BINDING_ABORTED|cancel/i;
+
+/**
  * Collects what a screenshot cannot show while a page loads and settles: console
  * errors, uncaught exceptions, failed requests, HTTP errors and cumulative layout
  * shift (measured in-page from the first navigation on). Attach before the first
@@ -90,8 +97,9 @@ export function attachRuntimeCollectors(page) {
   page.on("pageerror", (err) => state.pageErrors.push(String(err?.message ?? err).slice(0, 200)));
   page.on("requestfailed", (req) => {
     const url = req.url();
-    if (NOISE.test(url)) return;
-    state.failedRequests.push(`${url.slice(0, 160)} (${req.failure()?.errorText ?? "failed"})`);
+    const reason = req.failure()?.errorText ?? "failed";
+    if (NOISE.test(url) || ABORTED.test(reason)) return;
+    state.failedRequests.push(`${url.slice(0, 160)} (${reason})`);
   });
   page.on("response", (res) => {
     const url = res.url();

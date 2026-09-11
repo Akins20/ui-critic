@@ -12,8 +12,9 @@
   as they land, in capture order.
 - Consensus on regressions: every reported regression gets a second, stricter look; only
   confirmed ones count, tagged measured or judged; `--fail-on measured` is the CI-safe gate.
-- Runtime facts in the audit: console errors, uncaught exceptions, failed requests, HTTP
-  errors and cumulative layout shift, with the prompt told to report them.
+- Runtime facts in the audit: console errors, uncaught exceptions, failed requests (requests
+  the browser cancelled itself, such as abandoned prefetches, are not counted), HTTP errors
+  and cumulative layout shift, with the prompt told to report them.
 - Signed-in follow-ups: a page the critic asks for that redirects to sign in is captured
   again in the signed-in context when `auth` is configured.
 
