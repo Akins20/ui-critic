@@ -4,10 +4,11 @@ import { loadConfig, init } from "../src/config.mjs";
 import { capture } from "../src/capture.mjs";
 import { critique } from "../src/critique.mjs";
 import { compare } from "../src/compare.mjs";
-import { listModels } from "../src/gemini.mjs";
 import path from "node:path";
 import { usageLine } from "../src/report.mjs";
 import { costReport, renderCostReport } from "../src/cost.mjs";
+import { gateHits } from "../src/compare.mjs";
+import { listModels } from "../src/provider.mjs";
 import { resolvePrice, describePrice, PRICING_AS_OF, PRICING_SOURCE } from "../src/pricing.mjs";
 
 const HELP = `ui-critic: a second pair of eyes on a UI, for coding agents and humans.
@@ -32,10 +33,15 @@ Options (flags win over env, env over ui-critic.config.json, file over defaults)
   --follow-requests [--max-pages N]   capture and review same-origin pages the critic asks for
   --thinking-level off|low|medium|high   --include-thoughts   --no-cache   --ttl <seconds>
   --temperature <0..2>   --json (machine-readable summary on stdout)
-  --fail-on regressed|worse   (compare/verify: exit 2 when any page matches)
+  --decisions <file>      settled decisions the critic must not reopen (default ui-critic/decisions.md)
+  --concurrency <1..8>    calls in flight at once (default 3)
+  --no-confirm            skip the second look that confirms each reported regression
+  --provider gemini|openai   the critic (default: inferred from the model id, gemini)
+  --fail-on measured|regressed|worse   (compare/verify: exit 2 when any page matches;
+                          measured = a confirmed regression backed by a measured fact, the CI-safe choice)
 
-Environment: GEMINI_API_KEY (required, never stored), GEMINI_MODEL, UI_CRITIC_THINKING,
-UI_CRITIC_CACHE=0, UI_CRITIC_OUT, UI_CRITIC_BRIEF.
+Environment: GEMINI_API_KEY or OPENAI_API_KEY (never stored), GEMINI_MODEL, UI_CRITIC_PROVIDER,
+UI_CRITIC_THINKING, UI_CRITIC_CACHE=0, UI_CRITIC_OUT, UI_CRITIC_BRIEF, UI_CRITIC_CONCURRENCY.
 `;
 
 const [cmd, ...rest] = process.argv.slice(2);
@@ -51,6 +57,10 @@ const { values: flags } = parseArgs({
     brief: { type: "string" },
     context: { type: "string" },
     answers: { type: "string" },
+    decisions: { type: "string" },
+    concurrency: { type: "string" },
+    "no-confirm": { type: "boolean" },
+    provider: { type: "string" },
     "follow-requests": { type: "boolean" },
     "max-pages": { type: "string" },
     model: { type: "string" },
@@ -76,7 +86,7 @@ function emit(config, human, machine) {
 
 function gate(config, results) {
   if (!config.failOn) return;
-  const hit = results.filter((r) => (config.failOn === "regressed" ? r.regressed.length > 0 : r.verdict === "worse"));
+  const hit = gateHits(results, config.failOn);
   if (hit.length) {
     process.stderr.write(`ui-critic: --fail-on ${config.failOn} matched ${hit.length} page(s)\n`);
     process.exitCode = 2;
@@ -159,7 +169,7 @@ async function main() {
       break;
     }
     case "models": {
-      const models = await listModels(flags.filter);
+      const models = await listModels(config, flags.filter);
       const priced = models.map((m) => {
         const price = resolvePrice(m.name, config.pricing);
         return { ...m, price: price ? describePrice(price) : null };

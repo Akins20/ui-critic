@@ -11,7 +11,9 @@ is brief, run, answer, triage, implement, verify, report. Never skip triage: the
 not see the code or the product decisions, only what you give it.
 
 ## Prerequisites
-- `GEMINI_API_KEY` exported in the shell. Never paste it into files, prompts, logs or reports.
+- `GEMINI_API_KEY` or `OPENAI_API_KEY` exported in the shell (Gemini is the default critic;
+  `--model gpt-5.4-mini` or `--provider openai` switches). Never paste a key into files,
+  prompts, logs or reports.
 - The CLI: `npx @akins20/ui-critic` (or `npm i -g @akins20/ui-critic`, which installs the `ui-critic` command), or from a checkout `node <absolute path>/ui-critic/bin/ui-critic.mjs`.
 - For capture: Playwright with Chromium in the project (`@playwright/test` counts). Without it,
   point `critique` at screenshots taken another way, described by a `manifest.json`.
@@ -19,7 +21,8 @@ not see the code or the product decisions, only what you give it.
 
 ## The loop
 1. **Bootstrap.** `ui-critic init --base <url>` writes `ui-critic.config.json` (every default
-   spelled out) and `ui-critic/brief.md`. Keep the output directory out of git.
+   spelled out), `ui-critic/brief.md` and `ui-critic/decisions.md`. Keep the output directory
+   out of git.
 2. **Brief, from the real product.** The critic judges against the brief, never against a
    generic site, and refuses to run without Product and Audience. Fill it from the codebase
    and docs: what the product is for and the one thing a visitor must understand, who the
@@ -46,6 +49,9 @@ not see the code or the product decisions, only what you give it.
    `critique --in <dir>` when the answers change the judgement. Be honest in answers; the
    critic cannot check them.
 6. **Triage every finding** into accept, adapt or reject, each with a one-line reason.
+   Record every rejection the user confirms as a bullet in `ui-critic/decisions.md` with
+   its reason: the critic is told those are closed and withholds findings that would only
+   reopen them, so the next run does not re-litigate settled taste.
    Reject when it conflicts with the brief, accessibility (contrast, target size, motion,
    focus), engineering constraints, a recorded product decision, or is a
    `placeholder-content` complaint. Use the measured facts to settle disputes (a contrast
@@ -53,9 +59,11 @@ not see the code or the product decisions, only what you give it.
    Tell the user what you rejected and why; they arbitrate taste.
 7. **Implement** accepted items in the codebase's own idiom (tokens over raw values,
    existing components). Run the project's lint, typecheck and tests.
-8. **Verify.** `ui-critic verify --before <out>/before --base <url-with-changes> --fail-on regressed`.
-   Fix regressions before reporting; `compare.md` lists improved, regressed and still open
-   per page and viewport.
+8. **Verify.** `ui-critic verify --before <out>/before --base <url-with-changes> --fail-on measured`.
+   Every reported regression gets a second look; only confirmed ones count, tagged measured
+   or judged. Fix the confirmed ones before reporting; `compare.md` lists improved,
+   regressed, not-confirmed and still open per page and viewport. In CI use `--fail-on
+   measured`, which cannot flake on taste.
 9. **Report** in plain language: what changed, what was rejected and why, what the critic
    still asks for, what is still open, the cost of the runs (`ui-critic cost` totals the
    ledger per run at built-in prices; the usage line of each report names the price it

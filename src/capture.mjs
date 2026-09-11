@@ -73,8 +73,78 @@ async function settle(page, hideSelectors) {
   await page.waitForTimeout(700);
 }
 
+/** URLs whose failures are a dev server's own chatter, not the page's. */
+const NOISE = /webpack-hmr|hot-update|__nextjs|sockjs|\/_next\/static\/development|livereload/;
+
+/**
+ * Collects what a screenshot cannot show while a page loads and settles: console
+ * errors, uncaught exceptions, failed requests, HTTP errors and cumulative layout
+ * shift (measured in-page from the first navigation on). Attach before the first
+ * navigation of a page; call reset() before each capture and read() after it.
+ */
+export function attachRuntimeCollectors(page) {
+  const state = { consoleErrors: [], pageErrors: [], failedRequests: [], httpErrors: [] };
+  page.on("console", (msg) => {
+    if (msg.type() === "error") state.consoleErrors.push(msg.text().slice(0, 200));
+  });
+  page.on("pageerror", (err) => state.pageErrors.push(String(err?.message ?? err).slice(0, 200)));
+  page.on("requestfailed", (req) => {
+    const url = req.url();
+    if (NOISE.test(url)) return;
+    state.failedRequests.push(`${url.slice(0, 160)} (${req.failure()?.errorText ?? "failed"})`);
+  });
+  page.on("response", (res) => {
+    const url = res.url();
+    if (res.status() >= 400 && !NOISE.test(url)) state.httpErrors.push(`${res.status()} ${url.slice(0, 160)}`);
+  });
+  return {
+    reset() {
+      for (const k of Object.keys(state)) state[k].length = 0;
+    },
+    async read() {
+      let cls = null;
+      try {
+        cls = await page.evaluate(() => (typeof window.__uiCriticCLS === "number" ? Math.round(window.__uiCriticCLS * 1000) / 1000 : null));
+      } catch {
+        // page gone or script blocked: no layout shift figure
+      }
+      return summarizeRuntime(state, cls);
+    },
+  };
+}
+
+/** The compact, deduplicated runtime record stored beside the audit facts. */
+export function summarizeRuntime(state, cls) {
+  const uniq = (list, cap = 10) => Array.from(new Set(list)).slice(0, cap);
+  return {
+    consoleErrors: uniq(state.consoleErrors),
+    pageErrors: uniq(state.pageErrors),
+    failedRequests: uniq(state.failedRequests),
+    httpErrors: uniq(state.httpErrors),
+    cls,
+  };
+}
+
+/** Installed once per page: accumulates layout shift from the first paint on. */
+const CLS_SCRIPT = `(() => {
+  window.__uiCriticCLS = 0;
+  try {
+    new PerformanceObserver((list) => {
+      for (const entry of list.getEntries()) if (!entry.hadRecentInput) window.__uiCriticCLS += entry.value;
+    }).observe({ type: "layout-shift", buffered: true });
+  } catch (e) {}
+})();`;
+
+/** Prepares a page for capture: the layout-shift meter and the runtime collectors. */
+export async function instrumentPage(page) {
+  if (page.__uiCriticRuntime) return page.__uiCriticRuntime;
+  await page.addInitScript(CLS_SCRIPT);
+  page.__uiCriticRuntime = attachRuntimeCollectors(page);
+  return page.__uiCriticRuntime;
+}
+
 /** Screenshots and audits the page as it is now, under the given slug and label. */
-async function shoot({ page, dir, slug, viewportName, route, label, extra = {} }) {
+async function shoot({ page, dir, slug, viewportName, route, label, extra = {}, runtime = null }) {
   const fold = path.join(dir, `${slug}.${viewportName}.fold.png`);
   const full = path.join(dir, `${slug}.${viewportName}.full.jpg`);
   const audit = path.join(dir, `${slug}.${viewportName}.audit.json`);
@@ -110,6 +180,7 @@ async function shoot({ page, dir, slug, viewportName, route, label, extra = {} }
   } catch (err) {
     facts = { error: err.message };
   }
+  if (runtime) facts.runtime = await runtime.read();
   await writeFile(audit, JSON.stringify(facts, null, 2));
   return { route: label, path: route, url: page.url(), viewport: viewportName, title: await page.title(), fold, full, audit, hiddenFixed, ...extra };
 }
@@ -120,6 +191,8 @@ async function shoot({ page, dir, slug, viewportName, route, label, extra = {} }
  * follow-up capture of pages the critic asks for.
  */
 export async function captureRoute({ page, base, route, viewportName, dir, hideSelectors, auth = false }) {
+  const runtime = await instrumentPage(page);
+  runtime.reset();
   const url = new URL(route, base).toString();
   try {
     await page.goto(url, { waitUntil: "networkidle", timeout: 90_000 });
@@ -127,7 +200,7 @@ export async function captureRoute({ page, base, route, viewportName, dir, hideS
     await page.goto(url, { waitUntil: "load", timeout: 90_000 });
   }
   await settle(page, hideSelectors);
-  return shoot({ page, dir, slug: routeSlug(route), viewportName, route, label: route, extra: { auth } });
+  return shoot({ page, dir, slug: routeSlug(route), viewportName, route, label: route, extra: { auth }, runtime });
 }
 
 /**
@@ -138,6 +211,8 @@ export async function captureRoute({ page, base, route, viewportName, dir, hideS
  * fragile scenario cannot cost the whole capture.
  */
 export async function captureScenario({ page, base, scenario, viewportName, dir, hideSelectors, secrets }) {
+  const runtime = await instrumentPage(page);
+  runtime.reset();
   const url = new URL(scenario.route, base).toString();
   try {
     await page.goto(url, { waitUntil: "networkidle", timeout: 90_000 });
@@ -155,7 +230,7 @@ export async function captureScenario({ page, base, scenario, viewportName, dir,
   }
   const slug = `${routeSlug(scenario.route)}.${scenario.name.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}`;
   const label = scenarioLabel(scenario.route, scenario.name);
-  return shoot({ page, dir, slug, viewportName, route: scenario.route, label, extra: { scenario: scenario.name, steps, stepError: error, auth: Boolean(scenario.auth) } });
+  return shoot({ page, dir, slug, viewportName, route: scenario.route, label, extra: { scenario: scenario.name, steps, stepError: error, auth: Boolean(scenario.auth) }, runtime });
 }
 
 /** Opens a browser context for one named viewport with motion reduced and a light scheme. */
@@ -282,12 +357,25 @@ export async function capture({ base, routes, scenarios = [], auth = null, viewp
   return manifest;
 }
 
+/** Whether a capture landed somewhere else than it was sent (a login redirect, say). */
+export function redirectedAway(requestedRoute, landedUrl, base) {
+  try {
+    const wanted = new URL(requestedRoute, base).pathname.replace(/\/+$/, "") || "/";
+    const got = new URL(landedUrl).pathname.replace(/\/+$/, "") || "/";
+    return wanted !== got;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Captures extra routes into an existing capture set (the critic asked for them),
  * appending to its manifest. Returns the new shots; an unavailable Playwright is
- * reported rather than thrown, since the follow-up is best effort.
+ * reported rather than thrown, since the follow-up is best effort. A requested
+ * page that redirects a visitor away (to sign in) is captured again in a signed-in
+ * context when auth is configured, so the critic reviews the page it asked for.
  */
-export async function captureMore(manifest, routes) {
+export async function captureMore(manifest, routes, { auth = null, secrets = {} } = {}) {
   let playwright;
   try {
     playwright = await loadPlaywright();
@@ -300,10 +388,27 @@ export async function captureMore(manifest, routes) {
     for (const [viewportName, vp] of Object.entries(manifest.viewports)) {
       const context = await openContext(browser, vp);
       const page = await context.newPage();
+      let signedIn = null;
       for (const route of routes) {
-        shots.push(await captureRoute({ page, base: manifest.base, route, viewportName, dir: manifest.dir, hideSelectors: manifest.hideSelectors ?? [] }));
-        process.stderr.write(`  ${viewportName.padEnd(8)} ${route} (requested by the critic)\n`);
+        let shot = await captureRoute({ page, base: manifest.base, route, viewportName, dir: manifest.dir, hideSelectors: manifest.hideSelectors ?? [] });
+        if (auth && redirectedAway(route, shot.url, manifest.base)) {
+          if (!signedIn) {
+            const opened = await openAuthContext(browser, vp, auth, manifest.base, secrets);
+            signedIn = opened.context ? { context: opened.context, page: await opened.context.newPage() } : { context: null, reason: opened.reason };
+          }
+          if (signedIn.context) {
+            shot = await captureRoute({ page: signedIn.page, base: manifest.base, route, viewportName, dir: manifest.dir, hideSelectors: manifest.hideSelectors ?? [], auth: true });
+            process.stderr.write(`  ${viewportName.padEnd(8)} ${route} (requested by the critic, signed in)\n`);
+          } else {
+            shot.redirected = true;
+            process.stderr.write(`  ${viewportName.padEnd(8)} ${route} (requested by the critic; redirected and ${signedIn.reason})\n`);
+          }
+        } else {
+          process.stderr.write(`  ${viewportName.padEnd(8)} ${route} (requested by the critic)\n`);
+        }
+        shots.push(shot);
       }
+      if (signedIn?.context) await signedIn.context.close();
       await context.close();
     }
   } finally {

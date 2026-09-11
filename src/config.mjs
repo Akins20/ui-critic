@@ -82,8 +82,11 @@ export const DEFAULTS = {
   out: "ui-critic-out",
   model: "gemini-3.8-flash",
   brief: "ui-critic/brief.md",
-  context: { files: [], answers: "ui-critic/answers.md" },
+  context: { files: [], answers: "ui-critic/answers.md", decisions: "ui-critic/decisions.md" },
   followRequests: { enabled: false, maxPages: 3 },
+  concurrency: 3,
+  compare: { confirmRegressions: true },
+  provider: undefined,
   disciplines: DEFAULT_DISCIPLINES,
   principles: DEFAULT_PRINCIPLES,
   hideSelectors: [],
@@ -120,6 +123,8 @@ export function envOverrides(env = process.env) {
   if (env.UI_CRITIC_CACHE === "0" || env.UI_CRITIC_CACHE === "false") o.cache = { enabled: false };
   if (env.UI_CRITIC_OUT) o.out = env.UI_CRITIC_OUT;
   if (env.UI_CRITIC_BRIEF) o.brief = env.UI_CRITIC_BRIEF;
+  if (env.UI_CRITIC_CONCURRENCY) o.concurrency = Number(env.UI_CRITIC_CONCURRENCY);
+  if (env.UI_CRITIC_PROVIDER) o.provider = env.UI_CRITIC_PROVIDER;
   return o;
 }
 
@@ -134,6 +139,10 @@ export function flagOverrides(flags) {
   if (flags.brief) o.brief = flags.brief;
   if (flags.context) o.context = { files: flags.context.split(",").map((f) => f.trim()).filter(Boolean) };
   if (flags.answers) o.context = { ...(o.context ?? {}), answers: flags.answers };
+  if (flags.decisions) o.context = { ...(o.context ?? {}), decisions: flags.decisions };
+  if (flags.concurrency) o.concurrency = Number(flags.concurrency);
+  if (flags.provider) o.provider = flags.provider;
+  if (flags["no-confirm"]) o.compare = { confirmRegressions: false };
   if (flags["follow-requests"]) o.followRequests = { enabled: true };
   if (flags["max-pages"]) o.followRequests = { ...(o.followRequests ?? {}), maxPages: Number(flags["max-pages"]) };
   if (flags["thinking-level"] || flags["include-thoughts"] !== undefined) {
@@ -161,6 +170,12 @@ export function validate(cfg) {
   }
   if (!(cfg.generation.temperature >= 0 && cfg.generation.temperature <= 2)) {
     throw new Error("generation.temperature must be between 0 and 2");
+  }
+  if (!(Number.isInteger(cfg.concurrency) && cfg.concurrency >= 1 && cfg.concurrency <= 8)) {
+    throw new Error("concurrency must be an integer from 1 to 8");
+  }
+  if (cfg.provider !== undefined && !["gemini", "openai"].includes(cfg.provider)) {
+    throw new Error("provider must be gemini or openai");
   }
   if (!Array.isArray(cfg.routes) || cfg.routes.length === 0) throw new Error("routes must be a non-empty list");
   for (const entry of cfg.routes) {
@@ -257,6 +272,13 @@ export async function init({ base, cwd = process.cwd() }) {
     await mkdir(path.dirname(briefPath), { recursive: true });
     await writeFile(briefPath, await readFile(template, "utf8"));
     written.push(briefPath);
+  }
+  const decisionsPath = path.join(cwd, "ui-critic", "decisions.md");
+  if (!(await exists(decisionsPath))) {
+    const template = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "templates", "decisions.example.md");
+    await mkdir(path.dirname(decisionsPath), { recursive: true });
+    await writeFile(decisionsPath, await readFile(template, "utf8"));
+    written.push(decisionsPath);
   }
   return written;
 }

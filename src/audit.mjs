@@ -149,6 +149,13 @@ export function auditSummary(audit) {
     `${audit.textContrast.failingAA}/${audit.textContrast.sampled} text samples fail AA contrast`,
     `${audit.images.missingAlt} images missing alt`,
   ];
+  const rt = audit.runtime;
+  if (rt) {
+    const errors = (rt.consoleErrors?.length ?? 0) + (rt.pageErrors?.length ?? 0);
+    const failed = (rt.failedRequests?.length ?? 0) + (rt.httpErrors?.length ?? 0);
+    parts.push(`${errors} console errors`, `${failed} failed requests`);
+    if (typeof rt.cls === "number") parts.push(`layout shift ${rt.cls}`);
+  }
   return parts.join(", ");
 }
 

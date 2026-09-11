@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.3.0
+
+- OpenAI as a second critic: any vision-capable OpenAI model via the Responses API with
+  strict structured outputs; reasoning effort from the thinking level; provider inferred
+  from the model id or set with `provider`; built-in OpenAI prices; `models` and the cost
+  ledger name the provider.
+- Settled decisions: `ui-critic/decisions.md` closes rejected findings; each finding names
+  the decision it would reopen and is withheld, with the count and the list in the report.
+- Concurrency: pages and pairs run a few at a time (`concurrency`, default 3), checkpointed
+  as they land, in capture order.
+- Consensus on regressions: every reported regression gets a second, stricter look; only
+  confirmed ones count, tagged measured or judged; `--fail-on measured` is the CI-safe gate.
+- Runtime facts in the audit: console errors, uncaught exceptions, failed requests, HTTP
+  errors and cumulative layout shift, with the prompt told to report them.
+- Signed-in follow-ups: a page the critic asks for that redirects to sign in is captured
+  again in the signed-in context when `auth` is configured.
+
 ## 0.2.0
 
 - Scenarios: click, hover, keyboard focus, fill, press, wait and scroll steps per route, each

@@ -1,4 +1,4 @@
-import { appendFile, mkdir, readFile } from "node:fs/promises";
+import { appendFile, mkdir } from "node:fs/promises";
 import path from "node:path";
 
 const API = "https://generativelanguage.googleapis.com/v1beta";
@@ -32,14 +32,7 @@ export async function listModels(filter) {
     .filter((m) => !filter || m.name.includes(filter));
 }
 
-/** Builds an inline image part from a PNG or JPEG file. */
-export async function imagePart(file) {
-  const data = await readFile(file);
-  const mimeType = /\.jpe?g$/i.test(file) ? "image/jpeg" : "image/png";
-  return { inlineData: { mimeType, data: data.toString("base64") } };
-}
-
-export const text = (t) => ({ text: t });
+export { imagePart, text } from "./parts.mjs";
 
 /**
  * Maps the tool's thinking config onto the API's thinkingConfig. Gemini 3.x models
@@ -235,6 +228,7 @@ export class GeminiClient {
     const entry = {
       ts: new Date().toISOString(),
       run: this.runLabel,
+      provider: "gemini",
       model: this.model,
       op,
       ...usage,
@@ -265,6 +259,7 @@ export class GeminiClient {
     }
     const storage = cacheStorageCost(this.cacheTokens ?? 0, this.cacheSeconds(), this.price);
     return {
+      provider: "gemini",
       model: this.model,
       ...totals,
       estimatedCostUSD: costKnown ? Math.round((cost + storage) * 1e6) / 1e6 : null,

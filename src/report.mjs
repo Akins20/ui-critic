@@ -78,6 +78,15 @@ export function renderCritique(result) {
     lines.push("### Not captured");
     for (const s of result.skipped) lines.push(`- ${s}`);
   }
+  const withheldSite = result.overall.withheld ?? [];
+  const withheldPages = (result.pages ?? []).flatMap((p) => p.withheld ?? []);
+  if (result.decisions?.length) {
+    lines.push("");
+    lines.push(`### Settled decisions applied: ${result.decisions.length}; findings withheld: ${withheldSite.length + withheldPages.length}`);
+    for (const f of [...withheldSite, ...withheldPages].slice(0, 20)) {
+      lines.push(`- [${f.page ?? "site"}] ${f.observation} (reopens: ${f.conflicts_with_decision})`);
+    }
+  }
   const reqs = requestsSection(result.requests, result.followed);
   if (reqs) {
     lines.push("");
@@ -122,8 +131,13 @@ export function renderCompare(result) {
       for (const s of r.improved) lines.push(`- ${s}`);
     }
     if (r.regressed.length) {
-      lines.push("Regressed:");
-      for (const s of r.regressed) lines.push(`- ${s}`);
+      const kinds = new Map((r.regressed_detail ?? []).map((d) => [d.text, d.kind]));
+      lines.push(r.regressed_detail?.length ? "Regressed (confirmed on a second look):" : "Regressed:");
+      for (const s of r.regressed) lines.push(`- ${kinds.has(s) ? `[${kinds.get(s)}] ` : ""}${s}`);
+    }
+    if (r.unconfirmed_regressions?.length) {
+      lines.push("Reported but not confirmed on a second look:");
+      for (const u of r.unconfirmed_regressions) lines.push(`- ${u.text} (${u.reason})`);
     }
     if (r.still_open.length) {
       lines.push("Still open:");

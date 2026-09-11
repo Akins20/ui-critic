@@ -1,10 +1,14 @@
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { GeminiClient, imagePart, text } from "./gemini.mjs";
+import { imagePart, text } from "./parts.mjs";
+import { createClient } from "./provider.mjs";
 import { renderCritique } from "./report.mjs";
 import { routeSlug, captureMore } from "./capture.mjs";
 import { auditForPrompt } from "./audit.mjs";
 import { requireBrief, contextSections } from "./brief.mjs";
+import { loadDecisions, decisionsSection, withholdSettled } from "./decisions.mjs";
+import { readEnvFile } from "./steps.mjs";
+import { runPool, serialWriter } from "./pool.mjs";
 
 /**
  * The critic's standing instructions. The disciplines list is spelled out so the
@@ -33,6 +37,7 @@ Rules:
 - The brief's product purpose, audience, brand and constraints are decisions already made: judge against them, not against a generic store.
 - Separate genuine UI defects from placeholder content the brief tells you to ignore, and say which is which.
 - If you cannot judge something well from what you were given, ask for it in requests (a page path, a file, a question for the team, a measurement) rather than guessing.
+- Runtime facts in the measured data (console errors, failed requests, HTTP errors, cumulative layout shift) are defects a screenshot cannot show: report each as a finding with the exact message or URL, and treat a layout shift above 0.1 as a real problem.
 - Scores are 0 to 100 against what a strong competitor in the same market ships today: 50 is average, 80 is excellent.`;
 
 const FINDING = {
@@ -63,8 +68,12 @@ const FINDING = {
     recommendation: { type: "STRING", description: "the specific change to make" },
     effort: { type: "STRING", enum: ["small", "medium", "large"] },
     defect_kind: { type: "STRING", enum: ["ui", "placeholder-content", "needs-engineering-judgement"] },
+    conflicts_with_decision: {
+      type: "STRING",
+      description: "the settled decision this finding would reopen, quoted from the settled decisions list, or an empty string when it reopens none",
+    },
   },
-  required: ["page", "viewport", "severity", "category", "observation", "evidence", "recommendation", "effort", "defect_kind"],
+  required: ["page", "viewport", "severity", "category", "observation", "evidence", "recommendation", "effort", "defect_kind", "conflicts_with_decision"],
 };
 
 const COVERAGE = {
@@ -222,18 +231,15 @@ export async function critique({ dir, config }) {
   requireBrief(config);
   const manifest = JSON.parse(await readFile(path.join(dir, "manifest.json"), "utf8"));
   manifest.dir = manifest.dir ?? dir;
-  const client = new GeminiClient({
-    model: config.model,
-    thinking: config.thinking,
-    generation: config.generation,
-    cache: config.cache,
-    pricing: config.pricing,
+  const client = createClient(config, {
     ledgerPath: path.join(config.out, config.ledger),
     runLabel: `critique:${manifest.label}`,
   });
 
   const extra = await contextSections(config);
+  const decisions = await loadDecisions(config);
   const prefix = [text(preamble(config.disciplines, config.principles)), text(briefSection(config.briefText))];
+  if (decisions.length) prefix.push(text(decisionsSection(decisions)));
   if (extra) prefix.push(text(extra));
   for (const s of manifest.shots) {
     prefix.push(text(`Screenshot: ${s.route} at ${s.viewport}, above the fold (${s.title})`), await imagePart(s.fold));
@@ -242,8 +248,10 @@ export async function critique({ dir, config }) {
   const thoughtLog = [];
   const done = await loadPartial(dir, manifest, config.model);
   const partialPath = path.join(dir, PARTIAL_FILE);
-  const checkpoint = () =>
-    writeFile(partialPath, JSON.stringify({ capturedAt: manifest.capturedAt, model: config.model, pages: done }, null, 2));
+  const checkpoint = serialWriter(() =>
+    writeFile(partialPath, JSON.stringify({ capturedAt: manifest.capturedAt, model: config.model, pages: done }, null, 2)),
+  );
+  const concurrency = config.concurrency ?? 1;
 
   const reviewPage = async (route, shots, inPrefix) => {
     const parts = inPrefix ? [] : [...prefix];
@@ -262,32 +270,35 @@ export async function critique({ dir, config }) {
     }
     const { data, thoughts } = await client.generateJSON({ parts, schema: PAGE, op: `page:${route}` });
     const slug = routeSlug(route);
-    data.findings = (data.findings ?? []).map((f, i) => ({ id: `${slug}-${i + 1}`, ...f, page: route }));
+    const all = (data.findings ?? []).map((f, i) => ({ id: `${slug}-${i + 1}`, ...f, page: route }));
+    const { kept, withheld } = withholdSettled(all);
+    data.findings = kept;
     data.requests = data.requests ?? [];
     data.coverage = data.coverage ?? [];
-    const page = { route, ...data, audits: {} };
+    const page = { route, ...data, withheld, audits: {} };
     for (const s of shots) {
       const audit = await readAudit(s);
       if (audit) page.audits[s.viewport] = audit;
     }
     if (thoughts) thoughtLog.push(`## ${route}\n\n${thoughts}`);
-    process.stderr.write(`  reviewed ${route}: score ${data.score}, ${data.findings.length} findings, ${data.requests.length} requests\n`);
+    process.stderr.write(`  reviewed ${route}: score ${data.score}, ${data.findings.length} findings${withheld.length ? ` (${withheld.length} withheld as settled)` : ""}, ${data.requests.length} requests\n`);
     return page;
   };
 
   try {
-    const pages = [];
-    for (const [route, shots] of groupByRoute(manifest.shots)) {
+    // Pages are reviewed a few at a time (config.concurrency); each finished page
+    // is checkpointed as it lands, and results keep the manifest's order.
+    const entries = Array.from(groupByRoute(manifest.shots));
+    const pages = await runPool(entries, concurrency, async ([route, shots]) => {
       if (done[route]) {
-        pages.push(done[route]);
         process.stderr.write(`  reused ${route} from checkpoint: score ${done[route].score}, ${done[route].findings.length} findings\n`);
-        continue;
+        return done[route];
       }
       const page = await reviewPage(route, shots, Boolean(cached));
-      pages.push(page);
       done[route] = page;
       await checkpoint();
-    }
+      return page;
+    });
 
     // The critic's page requests, fulfilled where the tool can: same origin, capped.
     let followed = { routes: [], skipped: null };
@@ -296,15 +307,17 @@ export async function critique({ dir, config }) {
       const wanted = followablePages(mergeRequests(pages.map((p) => p.requests)), manifest, follow.maxPages ?? 3);
       if (wanted.length) {
         process.stderr.write(`  the critic asked for ${wanted.join(", ")}; capturing\n`);
-        const more = await captureMore(manifest, wanted);
+        const secrets = await readEnvFile(config.auth?.envFile);
+        const more = await captureMore(manifest, wanted, { auth: config.auth ?? null, secrets });
         followed = { routes: wanted, skipped: more.skipped };
-        for (const [route, shots] of groupByRoute(more.shots)) {
+        const extraPages = await runPool(Array.from(groupByRoute(more.shots)), concurrency, async ([route, shots]) => {
           // These first screens are not in the cache, so they travel with the call.
           const page = await reviewPage(route, shots, false);
-          pages.push(page);
           done[route] = page;
           await checkpoint();
-        }
+          return page;
+        });
+        pages.push(...extraPages);
       }
     }
 
@@ -324,7 +337,9 @@ export async function critique({ dir, config }) {
     try {
       const site = await client.generateJSON({ parts, schema: OVERALL, op: "site" });
       overall = site.data;
-      overall.consistency_findings = (overall.consistency_findings ?? []).map((f, i) => ({ id: `site-${i + 1}`, ...f }));
+      const siteSplit = withholdSettled((overall.consistency_findings ?? []).map((f, i) => ({ id: `site-${i + 1}`, ...f })));
+      overall.consistency_findings = siteSplit.kept;
+      overall.withheld = siteSplit.withheld;
       overall.requests = overall.requests ?? [];
       if (site.thoughts) thoughtLog.push(`## site\n\n${site.thoughts}`);
     } catch (err) {
@@ -351,6 +366,7 @@ export async function critique({ dir, config }) {
       requests,
       followed,
       skipped: manifest.skipped ?? [],
+      decisions,
       usage: client.summary(),
       ...(siteError ? { error: siteError } : {}),
     };

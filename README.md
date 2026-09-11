@@ -1,9 +1,9 @@
 # ui-critic
 
 A second pair of eyes for a UI. Capture screenshots and measured facts from a running
-site, get a ranked visual critique from Gemini that judges against your product's purpose
-and audience across every design discipline, triage it, ship the fixes, and verify with a
-before/after comparison.
+site, get a ranked visual critique from Gemini or OpenAI that judges against your product's
+purpose and audience across every design discipline, triage it, ship the fixes, and verify
+with a before/after comparison.
 
 It exists so one coding agent can ask another model for design review: Claude Code does the
 building and the judgement, Gemini does the looking. It works just as well for a human at a
@@ -13,8 +13,8 @@ terminal. Zero required dependencies beyond Node 20; Playwright is optional, for
 
 ```bash
 npm i -g @akins20/ui-critic                   # or run it with npx @akins20/ui-critic ...
-export GEMINI_API_KEY=...                     # your key; read from the environment only
-ui-critic init --base https://your.site       # writes ui-critic.config.json + ui-critic/brief.md
+export GEMINI_API_KEY=...                     # or OPENAI_API_KEY; read from the environment only
+ui-critic init --base https://your.site       # writes ui-critic.config.json, ui-critic/brief.md, ui-critic/decisions.md
 # fill in the brief: what the product is for and who it is for are required
 ui-critic run --label before --follow-requests
 # make changes, then either deploy or run locally
@@ -22,6 +22,16 @@ ui-critic verify --before ui-critic-out/before --base http://localhost:3000
 ```
 
 The package is `@akins20/ui-critic` on npm; the command it installs is `ui-critic`.
+
+## Which model looks
+
+Gemini is the default critic (`gemini-3.8-flash`). Any OpenAI model with vision works too:
+pass `--model gpt-5.4-mini` (the provider is inferred from the id) or set `"provider":
+"openai"` in the config, and export `OPENAI_API_KEY`. Reasoning models take the thinking
+level as their reasoning effort; `includeThoughts` keeps the reasoning summary. OpenAI has
+no explicit context cache, so the tool relies on its automatic prefix caching; the prompt
+is already ordered stable-prefix first for that. `ui-critic models` lists the provider's
+vision models with their prices, and every report and the cost ledger name the provider.
 
 `capture`, `run` and `verify` need Playwright with Chromium in the project
 (`npm i -D playwright && npx playwright install chromium`; `@playwright/test` and
@@ -48,12 +58,17 @@ The critic never judges a generic store. Every request carries, in this order:
    Audience.
 3. **Extra context** you choose: `context.files` (design tokens, copy decks, policies) and
    the answers file, where your team answers what the critic asked for last time.
+   **Settled decisions** (`ui-critic/decisions.md`, one bullet each with the reason) are
+   closed: the critic is told not to reopen them, every finding names the decision it would
+   reopen or none, and those findings are withheld from the report but counted, so the
+   filter stays auditable.
 4. **Every page's first screen** at every viewport, then per page the **full-page
    capture** and the **measured facts** the capture gathered in the browser: fonts and the
    base size, the text size histogram, the heading outline, landmarks, image alt coverage,
-   interactive targets under 24px, and the lowest-contrast visible text with its WCAG AA
-   result. Measured facts are ground truth for the critic, so it does not guess a
-   contrast ratio or a font size.
+   interactive targets under 24px, the lowest-contrast visible text with its WCAG AA
+   result, and the **runtime facts** a screenshot cannot show: console errors, uncaught
+   exceptions, failed requests, HTTP errors and cumulative layout shift. Measured facts are
+   ground truth for the critic, so it does not guess a contrast ratio or a font size.
 
 ## States, mini-features and signed-in pages
 
@@ -102,8 +117,9 @@ Each page review and the site review end with `requests`: pages, files, answers 
 measurements the critic needs to judge better, each with the reason. Page requests for the
 same origin are fulfilled automatically with `--follow-requests` (or
 `followRequests.enabled` in the config): the tool captures the page, reviews it and adds it
-to the report, up to `maxPages`. Everything else is listed under "Critic's requests" in the
-report; answer it in `ui-critic/answers.md` (or add the page to `routes`) and rerun, and the
+to the report, up to `maxPages`; a requested page that redirects a visitor to sign in is
+captured again in the signed-in context when `auth` is configured. Everything else is
+listed under "Critic's requests" in the report; answer it in `ui-critic/answers.md` (or add the page to `routes`) and rerun, and the
 answers travel with the next critique.
 
 ## What you get
@@ -113,7 +129,10 @@ answers travel with the next critique.
   discipline coverage per page, a revamp-or-polish verdict, the five highest-leverage
   changes, and the critic's requests.
 - `compare.md` / `compare.json`: per page and viewport, what improved, what regressed, what
-  is still open, with measured facts from both sides.
+  is still open, with measured facts from both sides. Every reported regression gets a
+  second, stricter look at the same captures; only confirmed ones count, each tagged
+  `measured` (a fact proves it) or `judged` (visual judgement), and the unconfirmed ones are
+  listed with the reason. A verdict that rested only on unconfirmed regressions is revised.
 
 Findings are typed (`hierarchy`, `typography`, `conversion`, `accessibility`, ...) and each
 is marked `ui`, `placeholder-content` or `needs-engineering-judgement`, so the reader can
@@ -133,9 +152,16 @@ triage instead of obeying.
 | `cost [--out dir]` | total the usage ledger per run at today's prices |
 
 `--json` prints a machine-readable summary to stdout (for an agent to parse); the full
-reports are always written next to the screenshots. `--fail-on regressed` or
-`--fail-on worse` makes `compare` and `verify` exit with code 2 when any page matches,
-for CI gates.
+reports are always written next to the screenshots. `--fail-on measured` makes `compare`
+and `verify` exit with code 2 when a confirmed regression is backed by a measured fact
+(contrast, target size, landmarks, headings, layout shift, errors), which is the choice
+for a pull-request gate because it cannot flake on taste; `--fail-on regressed` trips on
+any confirmed regression and `--fail-on worse` on a worse verdict. `--no-confirm` skips
+the second look.
+
+Calls run a few at a time (`concurrency`, default 3, `--concurrency N`,
+`UI_CRITIC_CONCURRENCY`); each finished page or pair is checkpointed as it lands and the
+report keeps the capture order.
 
 ## Configuration
 
@@ -151,8 +177,11 @@ Every knob has a default. Resolution order, lowest to highest: built-in defaults
     "mobile": { "width": 390, "height": 844, "deviceScaleFactor": 2, "isMobile": true }
   },
   "brief": "ui-critic/brief.md",
-  "context": { "files": ["app/globals.css"], "answers": "ui-critic/answers.md" },
+  "context": { "files": ["app/globals.css"], "answers": "ui-critic/answers.md", "decisions": "ui-critic/decisions.md" },
   "followRequests": { "enabled": true, "maxPages": 3 },
+  "concurrency": 3,
+  "compare": { "confirmRegressions": true },
+  "provider": "gemini",
   "disciplines": ["layout and grid: ...", "typography: ..."],
   "principles": ["Every action a user takes gets immediate, visible feedback: ..."],
   "out": "ui-critic-out",
@@ -166,16 +195,18 @@ Every knob has a default. Resolution order, lowest to highest: built-in defaults
 }
 ```
 
-Environment: `GEMINI_API_KEY` (required), `GEMINI_MODEL`, `UI_CRITIC_THINKING`,
-`UI_CRITIC_CACHE=0`, `UI_CRITIC_OUT`, `UI_CRITIC_BRIEF`. Flags: `--model`,
+Environment: `GEMINI_API_KEY` or `OPENAI_API_KEY` (one is required), `GEMINI_MODEL`,
+`UI_CRITIC_PROVIDER`, `UI_CRITIC_THINKING`, `UI_CRITIC_CACHE=0`, `UI_CRITIC_OUT`,
+`UI_CRITIC_BRIEF`, `UI_CRITIC_CONCURRENCY`. Flags: `--provider`, `--model`,
 `--thinking-level`, `--include-thoughts`, `--no-cache`, `--ttl`, `--temperature`,
-`--routes`, `--out`, `--brief`, `--context`, `--answers`, `--follow-requests`,
-`--max-pages`, `--config`.
+`--routes`, `--out`, `--brief`, `--context`, `--answers`, `--decisions`,
+`--follow-requests`, `--max-pages`, `--concurrency`, `--no-confirm`, `--config`.
 
 ### Thinking
 
-`thinking.level` is `off`, `low`, `medium` or `high` (Gemini 3.x `thinkingLevel`; the
-default is `high`, since a critique is judgement work). `thinking.budget` sets a token
+`thinking.level` is `off`, `low`, `medium` or `high` (Gemini 3.x `thinkingLevel`, or the
+reasoning effort of an OpenAI reasoning model; the default is `high`, since a critique is
+judgement work). `thinking.budget` sets a token
 budget for models that use `thinkingBudget` instead. `includeThoughts: true` keeps the
 model's reasoning in `thoughts.md` beside the report, so a reviewer can see why a finding
 was made. An agent can set all of these per run with flags or env without touching the file.
@@ -207,8 +238,8 @@ report, with an estimated cost in USD. Prices come from a built-in table of the 
 Gemini API price list (standard tier, text and image input, thinking billed as output,
 cached input at the cached rate, explicit-cache storage per hour, long-context rates
 above a model's threshold, and announced price changes by date). The table covers every
-current generation model and the previous one; `ui-critic models` shows the price each
-model would be billed at, and `ui-critic cost` totals the ledger per run at today's
+current Gemini generation model and the previous one, and the current OpenAI text and
+vision models; `ui-critic models` shows the price each model would be billed at, and `ui-critic cost` totals the ledger per run at today's
 prices, so a run made before a price was known still gets a number.
 
 ```json

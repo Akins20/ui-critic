@@ -57,7 +57,7 @@ test("validate rejects bad thinking levels, temperatures and viewports", () => {
 test("init writes a config with every default and a brief, and never overwrites", async () => {
   const dir = await mkdtemp(path.join(tmpdir(), "ui-critic-init-"));
   const first = await init({ base: "http://localhost:4000", cwd: dir });
-  assert.equal(first.length, 2);
+  assert.equal(first.length, 3);
   const cfg = JSON.parse(await readFile(path.join(dir, "ui-critic.config.json"), "utf8"));
   assert.equal(cfg.base, "http://localhost:4000");
   assert.equal(cfg.thinking.level, "high");

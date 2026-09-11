@@ -8,12 +8,12 @@
  * exceeds the threshold. `tiers` lists price periods for models with an announced
  * change; the tier whose `from` date is the latest one at or before the call applies.
  *
- * Source: the official pricing page, read on the date below. Prices change; the
+ * Sources: the official Gemini and OpenAI pricing pages, read on the date below. Prices change; the
  * `pricing` block of the config overrides any model here, and `ui-critic models`
  * shows what will be used.
  */
-export const PRICING_SOURCE = "https://ai.google.dev/gemini-api/docs/pricing";
-export const PRICING_AS_OF = "2026-09-08";
+export const PRICING_SOURCE = "https://ai.google.dev/gemini-api/docs/pricing and https://developers.openai.com/api/docs/pricing";
+export const PRICING_AS_OF = "2026-09-11";
 
 const flash38 = {
   tiers: [
@@ -71,6 +71,34 @@ export const BUILT_IN_PRICING = {
     ],
   },
   "gemini-robotics-er-1.6-preview": { input: 1.0, output: 5.0 },
+
+  // OpenAI (standard tier; cached input is the cached rate; reasoning tokens bill as output)
+  "gpt-6-astra": { input: 10.0, output: 50.0, cached: 1.0 },
+  "gpt-5.6-sol": { input: 4.0, output: 20.0, cached: 0.4 },
+  "gpt-5.6-terra": { input: 2.0, output: 12.0, cached: 0.2 },
+  "gpt-5.6-luna": { input: 0.2, output: 1.2, cached: 0.02 },
+  "gpt-5.5": { input: 5.0, output: 30.0, cached: 0.5 },
+  "gpt-5.5-pro": { input: 30.0, output: 180.0 },
+  "gpt-5.4": { input: 2.5, output: 15.0, cached: 0.25 },
+  "gpt-5.4-mini": { input: 0.75, output: 4.5, cached: 0.075 },
+  "gpt-5.4-nano": { input: 0.2, output: 1.25, cached: 0.02 },
+  "gpt-5.4-pro": { input: 30.0, output: 180.0 },
+  "gpt-5.2": { input: 1.75, output: 14.0, cached: 0.175 },
+  "gpt-5.1": { input: 1.25, output: 10.0, cached: 0.125 },
+  "gpt-5": { input: 1.25, output: 10.0, cached: 0.125 },
+  "gpt-5-mini": { input: 0.25, output: 2.0, cached: 0.025 },
+  "gpt-5-nano": { input: 0.05, output: 0.4, cached: 0.005 },
+  o1: { input: 15.0, output: 60.0, cached: 7.5 },
+  "o1-pro": { input: 150.0, output: 600.0 },
+  "o3-pro": { input: 20.0, output: 80.0 },
+  o3: { input: 2.0, output: 8.0, cached: 0.5 },
+  "o4-mini": { input: 1.1, output: 4.4, cached: 0.275 },
+  "o3-mini": { input: 1.1, output: 4.4, cached: 0.55 },
+  "gpt-4.1": { input: 2.0, output: 8.0, cached: 0.5 },
+  "gpt-4.1-mini": { input: 0.4, output: 1.6, cached: 0.1 },
+  "gpt-4.1-nano": { input: 0.1, output: 0.4, cached: 0.025 },
+  "gpt-4o": { input: 2.5, output: 10.0, cached: 1.25 },
+  "gpt-4o-mini": { input: 0.15, output: 0.6, cached: 0.075 },
 };
 
 /** The model id without the API's `models/` prefix. */
