@@ -1,9 +1,22 @@
 name: publish
 
 # Publishes the package to npm when a version tag is pushed (v0.2.0, v0.3.0, ...).
-# Needs an npm automation token stored as the NPM_TOKEN repository secret; the
-# publish carries provenance, so npm shows the exact commit and workflow it came
-# from. Cut a release with: npm version minor && git push origin main --tags
+# Cut a release with: npm version minor && git push origin main --tags
+#
+# Two ways to authorise the publish, checked in this order:
+#
+# 1. Trusted publishing (no token to create, store or rotate): on npmjs.com, open
+#    the package, Settings, "Trusted publisher", choose GitHub Actions and enter the
+#    owner (Akins20), the repository (ui-critic) and this workflow's file name
+#    (publish.yml). npm then accepts a publish from this workflow on the strength of
+#    the OIDC token GitHub issues to it (the id-token permission below), and attaches
+#    provenance on its own. This needs npm 11.5 or later, hence the upgrade step.
+#
+# 2. An automation token stored as the NPM_TOKEN repository secret (a granular
+#    access token for this package with "bypass 2FA" enabled). Used when present.
+#
+# With neither in place the publish fails with "need auth", and the release is a
+# hand `npm publish` from a checkout of the tag.
 
 on:
   push:
@@ -17,12 +30,13 @@ permissions:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    env:
+      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          registry-url: https://registry.npmjs.org
       - name: Unit tests
         run: npm test
       - name: The tag must match package.json
@@ -32,7 +46,15 @@ jobs:
             echo "tag ${GITHUB_REF_NAME} does not match package version ${expected}"
             exit 1
           fi
-      - name: Publish
-        run: npm publish --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - name: Use a current npm (trusted publishing needs 11.5 or later)
+        run: |
+          npm install -g npm@latest
+          npm --version
+      - name: Publish with the NPM_TOKEN secret
+        if: env.NPM_TOKEN != ''
+        run: |
+          npm config set "//registry.npmjs.org/:_authToken=${NPM_TOKEN}"
+          npm publish --provenance --access public
+      - name: Publish through trusted publishing
+        if: env.NPM_TOKEN == ''
+        run: npm publish --access public
