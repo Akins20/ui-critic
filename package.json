@@ -1,6 +1,6 @@
 {
   "name": "@akins20/ui-critic",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "A second pair of eyes for a UI: capture screenshots and measured facts, get a ranked visual critique from Gemini or OpenAI, and verify before and after. Built so one coding agent (Claude Code) can ask another model for design review.",
   "type": "module",
   "bin": {

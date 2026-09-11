@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.2
+
+- No code changes. Releases now publish through npm trusted publishing from the
+  tag workflow, with provenance attached by npm.
+
 ## 0.3.1
 
 - `ui-critic --help` (and `-h`) exits 0; it was read as an unknown command and exited 1.
