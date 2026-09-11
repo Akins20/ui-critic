@@ -34,15 +34,32 @@ export function auditScript() {
     });
     return 0.2126 * r + 0.7152 * g + 0.0722 * b;
   };
+  // The solid colour behind an element, or null when the text sits on an image
+  // or a gradient before any solid colour is reached: that contrast cannot be
+  // measured from styles, and a guess would be a false failure.
   const backgroundOf = (el) => {
     let n = el;
     while (n && n !== document.documentElement) {
-      const b = parseColor(cs(n).backgroundColor);
+      const st = cs(n);
+      const b = parseColor(st.backgroundColor);
       if (b && b.a > 0.05) return b.rgb;
+      if (st.backgroundImage && st.backgroundImage !== "none") return null;
+      if (n.tagName === "IMG" || n.tagName === "VIDEO" || n.tagName === "CANVAS") return null;
       n = n.parentElement;
     }
     const b = parseColor(cs(document.body).backgroundColor);
     return b && b.a > 0 ? b.rgb : [255, 255, 255];
+  };
+  // Text drawn on top of a positioned image (a hero caption) has no solid
+  // ancestor either; detect an image sibling underneath the text's box.
+  const overImage = (el) => {
+    const r = el.getBoundingClientRect();
+    const x = r.left + Math.min(8, r.width / 2);
+    const y = r.top + Math.min(8, r.height / 2);
+    if (x < 0 || y < 0 || x > innerWidth || y > innerHeight) return false;
+    const stack = document.elementsFromPoint(x, y);
+    const idx = stack.indexOf(el);
+    return stack.slice(idx + 1).some((n) => n.tagName === "IMG" || n.tagName === "VIDEO" || n.tagName === "CANVAS" || (cs(n).backgroundImage !== "none" && cs(n).backgroundImage));
   };
 
   const h1 = document.querySelector("h1");
@@ -74,10 +91,15 @@ export function auditScript() {
     .slice(0, 500);
   const pairs = [];
   const sizeHistogram = {};
+  let unmeasured = 0;
   for (const e of textElements) {
     const c = parseColor(cs(e).color);
     if (!c) continue;
     const bg = backgroundOf(e);
+    if (!bg || overImage(e)) {
+      unmeasured += 1;
+      continue;
+    }
     const l1 = luminance(c.rgb);
     const l2 = luminance(bg);
     const ratio = (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05);
@@ -113,7 +135,7 @@ export function auditScript() {
       total: interactive.length,
       under24px: interactive.filter((t) => t.w < 24 || t.h < 24).slice(0, 10),
     },
-    textContrast: { sampled: pairs.length, failingAA: pairs.filter((p) => !p.passesAA).length, lowest: lowContrast },
+    textContrast: { sampled: pairs.length, failingAA: pairs.filter((p) => !p.passesAA).length, lowest: lowContrast, overImage: unmeasured },
   };
 }
 
