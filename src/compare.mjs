@@ -18,6 +18,22 @@ const COMPARISON = {
   required: ["verdict", "improved", "regressed", "still_open", "notes"],
 };
 
+/**
+ * The pairs still to compare: after shots that have a before counterpart and are
+ * not in the checkpoint yet. Pure, so a resumed run is predictable and testable.
+ */
+export function pendingPairs(afterShots, beforeShots, doneResults = []) {
+  const key = (s) => `${s.route}::${s.viewport}`;
+  const beforeByKey = new Map(beforeShots.map((s) => [key(s), s]));
+  const done = new Set(doneResults.map(key));
+  const pairs = [];
+  for (const a of afterShots) {
+    const b = beforeByKey.get(key(a));
+    if (b && !done.has(key(a))) pairs.push({ a, b });
+  }
+  return pairs;
+}
+
 async function readManifest(dir) {
   const m = JSON.parse(await readFile(path.join(dir, "manifest.json"), "utf8"));
   m.dir = m.dir ?? dir;
@@ -57,13 +73,23 @@ export async function compare({ before, after, config }) {
   const prefix = [text(preamble(config.disciplines, config.principles)), text(briefSection(config.briefText))];
   if (extra) prefix.push(text(extra));
   const cached = await client.ensureCache(prefix, `ui-critic compare ${ma.label}`);
-  const key = (s) => `${s.route}::${s.viewport}`;
-  const beforeByKey = new Map(mb.shots.map((s) => [key(s), s]));
-  const results = [];
+  // Every finished pair is checkpointed, so a run cut short (a timeout, a lost
+  // connection) resumes where it stopped instead of paying for the same pairs
+  // again. The checkpoint belongs to one capture: a recapture invalidates it.
+  const partialPath = path.join(after, "compare.partial.json");
+  let done = [];
   try {
-    for (const a of ma.shots) {
-      const b = beforeByKey.get(key(a));
-      if (!b) continue;
+    const partial = JSON.parse(await readFile(partialPath, "utf8"));
+    if (partial.afterCapturedAt === ma.capturedAt) done = partial.results ?? [];
+  } catch {
+    // no checkpoint
+  }
+  const pending = pendingPairs(ma.shots, mb.shots, done);
+  if (done.length) process.stderr.write(`  resuming: ${done.length} pairs already compared, ${pending.length} to go
+`);
+  const results = [...done];
+  try {
+    for (const { a, b } of pending) {
       const parts = cached ? [] : [...prefix];
       parts.push(
         text(
@@ -84,6 +110,7 @@ export async function compare({ before, after, config }) {
       const { data } = await client.generateJSON({ parts, schema: COMPARISON, op: `compare:${a.route}@${a.viewport}` });
       results.push({ route: a.route, viewport: a.viewport, ...data });
       process.stderr.write(`  compared ${a.route} at ${a.viewport}: ${data.verdict}\n`);
+      await writeFile(partialPath, JSON.stringify({ afterCapturedAt: ma.capturedAt, results }, null, 2));
     }
   } finally {
     await client.close();

@@ -192,7 +192,7 @@ call. Any cache failure falls back to inline, with the reason recorded in the re
 Thinking tokens count against the output budget on Gemini 3.x, so the default
 `generation.maxOutputTokens` is 32768 and a response cut off at the budget is retried
 with double the budget up to 65536. Every finished page is checkpointed to
-`critique.partial.json`; a rerun on the same capture reuses those pages and only pays for
+`critique.partial.json` (and every finished comparison to `compare.partial.json`, tied to the after capture, so a run cut short by a process timeout resumes where it stopped); a rerun on the same capture reuses those pages and only pays for
 what is missing, and if the site-level pass fails the per-page results are still written
 before the error is raised.
 
