@@ -57,4 +57,14 @@ jobs:
           npm publish --provenance --access public
       - name: Publish through trusted publishing
         if: env.NPM_TOKEN == ''
-        run: npm publish --access public
+        # Verbose so that a refused OIDC token exchange is visible in the log; at the
+        # default level npm says nothing about it and fails with a bare "need auth".
+        run: npm publish --access public --loglevel verbose
+      - name: What "need auth" means here
+        if: failure()
+        run: |
+          echo "npm asked for a login, so the trusted-publishing token exchange was refused or never attempted."
+          echo "On npmjs.com, package Settings, Trusted publisher, check that:"
+          echo "  1. Allowed actions includes direct 'npm publish' (publishers created after 2026-09-03 allow only 'npm stage publish' by default);"
+          echo "  2. owner is Akins20, repository is ui-critic, workflow filename is publish.yml, and no environment name is set (this job declares none)."
+          echo "The verbose log above shows the exchange request and the registry's answer."
