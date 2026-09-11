@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.1
 
 - `ui-critic --help` (and `-h`) exits 0; it was read as an unknown command and exited 1.
 - An unknown flag is reported in one line with the help and exit code 2, instead of a
