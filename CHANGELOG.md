@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- `ui-critic --help` (and `-h`) exits 0; it was read as an unknown command and exited 1.
+- An unknown flag is reported in one line with the help and exit code 2, instead of a
+  stack trace.
+- The `models` help line names the provider rather than Gemini.
+
 ## 0.3.0
 
 - OpenAI as a second critic: any vision-capable OpenAI model via the Responses API with

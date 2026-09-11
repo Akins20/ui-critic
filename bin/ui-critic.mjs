@@ -15,7 +15,7 @@ const HELP = `ui-critic: a second pair of eyes on a UI, for coding agents and hu
 
 Commands
   init       [--base <url>]                          write a starter ui-critic.config.json and brief
-  models     [--filter flash]                        list vision-capable Gemini models
+  models     [--filter flash]                        list the provider's vision models, with prices
   capture    --base <url> --label <name>             screenshot and measure every route at every viewport
   critique   --in <capture dir>                      ranked findings, scores, priorities, the critic's requests
   compare    --before <dir> --after <dir>            what improved, regressed, is still open
@@ -44,40 +44,47 @@ Environment: GEMINI_API_KEY or OPENAI_API_KEY (never stored), GEMINI_MODEL, UI_C
 UI_CRITIC_THINKING, UI_CRITIC_CACHE=0, UI_CRITIC_OUT, UI_CRITIC_BRIEF, UI_CRITIC_CONCURRENCY.
 `;
 
-const [cmd, ...rest] = process.argv.slice(2);
-const { values: flags } = parseArgs({
-  args: rest,
-  allowPositionals: true,
-  options: {
-    base: { type: "string" },
-    label: { type: "string" },
-    routes: { type: "string" },
-    out: { type: "string" },
-    config: { type: "string" },
-    brief: { type: "string" },
-    context: { type: "string" },
-    answers: { type: "string" },
-    decisions: { type: "string" },
-    concurrency: { type: "string" },
-    "no-confirm": { type: "boolean" },
-    provider: { type: "string" },
-    "follow-requests": { type: "boolean" },
-    "max-pages": { type: "string" },
-    model: { type: "string" },
-    in: { type: "string" },
-    before: { type: "string" },
-    after: { type: "string" },
-    filter: { type: "string" },
-    "thinking-level": { type: "string" },
-    "include-thoughts": { type: "boolean" },
-    "no-cache": { type: "boolean" },
-    ttl: { type: "string" },
-    temperature: { type: "string" },
-    json: { type: "boolean" },
-    "fail-on": { type: "string" },
-    help: { type: "boolean", short: "h" },
-  },
-});
+const OPTIONS = {
+  base: { type: "string" },
+  label: { type: "string" },
+  routes: { type: "string" },
+  out: { type: "string" },
+  config: { type: "string" },
+  brief: { type: "string" },
+  context: { type: "string" },
+  answers: { type: "string" },
+  decisions: { type: "string" },
+  concurrency: { type: "string" },
+  "no-confirm": { type: "boolean" },
+  provider: { type: "string" },
+  "follow-requests": { type: "boolean" },
+  "max-pages": { type: "string" },
+  model: { type: "string" },
+  in: { type: "string" },
+  before: { type: "string" },
+  after: { type: "string" },
+  filter: { type: "string" },
+  "thinking-level": { type: "string" },
+  "include-thoughts": { type: "boolean" },
+  "no-cache": { type: "boolean" },
+  ttl: { type: "string" },
+  temperature: { type: "string" },
+  json: { type: "boolean" },
+  "fail-on": { type: "string" },
+  help: { type: "boolean", short: "h" },
+};
+
+const argv = process.argv.slice(2);
+// A leading flag (--help, -h) means no command was given.
+const [cmd, ...rest] = argv[0]?.startsWith("-") ? [undefined, ...argv] : argv;
+let flags;
+try {
+  ({ values: flags } = parseArgs({ args: rest, allowPositionals: true, options: OPTIONS }));
+} catch (err) {
+  console.error("ui-critic: " + err.message + "\n");
+  process.stdout.write(HELP);
+  process.exit(2);
+}
 
 function emit(config, human, machine) {
   if (config.json) process.stdout.write(JSON.stringify(machine, null, 2) + "\n");
