@@ -64,7 +64,11 @@ jobs:
         if: failure()
         run: |
           echo "npm asked for a login, so the trusted-publishing token exchange was refused or never attempted."
-          echo "On npmjs.com, package Settings, Trusted publisher, check that:"
-          echo "  1. Allowed actions includes direct 'npm publish' (publishers created after 2026-09-03 allow only 'npm stage publish' by default);"
-          echo "  2. owner is Akins20, repository is ui-critic, workflow filename is publish.yml, and no environment name is set (this job declares none)."
-          echo "The verbose log above shows the exchange request and the registry's answer."
+          echo "The verbose log above shows the exchange request and the registry's answer. What the answers mean:"
+          echo "  'package not found': no trusted-publisher record on npmjs.com matches this workflow's identity."
+          echo "     On npmjs.com, package Settings, Trusted publisher, the fields must read exactly:"
+          echo "     owner Akins20 (the GitHub login with its capital A, not the npm username), repository ui-critic"
+          echo "     (no owner prefix), workflow filename publish.yml (no path), and no environment name (this job declares none)."
+          echo "  a refusal naming allowed actions: the record allows only 'npm stage publish'; enable direct 'npm publish'"
+          echo "     (records created after 2026-09-03 allow staged publishing only by default)."
+          echo "After correcting the record, re-run this job; nothing in the repository needs to change."
