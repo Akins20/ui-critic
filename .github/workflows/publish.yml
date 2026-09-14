@@ -50,13 +50,25 @@ jobs:
         run: |
           npm install -g npm@latest
           npm --version
+      - name: Skip when this version is already on the registry
+        id: registry
+        # A tag that is moved or pushed again re-runs this job; publishing the
+        # same version twice is refused by npm, so end quietly instead.
+        run: |
+          spec="$(node -p "require('./package.json').name + '@' + require('./package.json').version")"
+          if npm view "$spec" version > /dev/null 2>&1; then
+            echo "$spec is already published; nothing to do"
+            echo "published=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "published=false" >> "$GITHUB_OUTPUT"
+          fi
       - name: Publish with the NPM_TOKEN secret
-        if: env.NPM_TOKEN != ''
+        if: env.NPM_TOKEN != '' && steps.registry.outputs.published != 'true'
         run: |
           npm config set "//registry.npmjs.org/:_authToken=${NPM_TOKEN}"
           npm publish --provenance --access public
       - name: Publish through trusted publishing
-        if: env.NPM_TOKEN == ''
+        if: env.NPM_TOKEN == '' && steps.registry.outputs.published != 'true'
         # Verbose so that a refused OIDC token exchange is visible in the log; at the
         # default level npm says nothing about it and fails with a bare "need auth".
         run: npm publish --access public --loglevel verbose
