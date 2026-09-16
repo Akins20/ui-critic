@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- A `viewports` map in the config replaces the built-in desktop and mobile pair instead of
+  merging with it. A phone-only review that named one viewport still captured, and paid to
+  critique, a desktop pass of every page.
+
 ## 0.3.2
 
 - No code changes. Releases now publish through npm trusted publishing from the

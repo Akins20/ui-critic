@@ -232,7 +232,12 @@ export async function loadConfig(flags = {}, env = process.env) {
   } catch (err) {
     if (flags.config || err.code !== "ENOENT") throw new Error(`could not read ${configPath}: ${err.message}`);
   }
-  const cfg = validate(merge(merge(merge(DEFAULTS, file), envOverrides(env)), flagOverrides(flags)));
+  const merged = merge(merge(merge(DEFAULTS, file), envOverrides(env)), flagOverrides(flags));
+  // A config that names its viewports means exactly those. The deep merge would
+  // otherwise keep the built-in desktop and mobile entries beside them, so a
+  // phone-only review still captured a desktop pass.
+  if (file.viewports && typeof file.viewports === "object") merged.viewports = file.viewports;
+  const cfg = validate(merged);
   cfg.configPath = configPath;
   cfg.briefText = "";
   if (cfg.brief) {

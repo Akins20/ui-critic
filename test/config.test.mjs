@@ -68,3 +68,19 @@ test("init writes a config with every default and a brief, and never overwrites"
   const second = await init({ cwd: dir });
   assert.equal(second.length, 0);
 });
+
+test("a config file that names its viewports replaces the defaults instead of merging", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "uic-vp-"));
+  const file = path.join(dir, "ui-critic.config.json");
+  await writeFile(
+    file,
+    JSON.stringify({ viewports: { phone: { width: 390, height: 844, deviceScaleFactor: 2, isMobile: true } } }),
+  );
+  const cfg = await loadConfig({ config: file }, {});
+  assert.deepEqual(Object.keys(cfg.viewports), ["phone"]);
+  const none = await loadConfig({ config: path.join(dir, "missing.json") }, {}).catch((err) => err);
+  assert.ok(none instanceof Error);
+  const plain = await mkdtemp(path.join(tmpdir(), "uic-vp2-"));
+  const defaults = await loadConfig({ config: path.join(plain, "ui-critic.config.json") }, {}).catch(() => null);
+  assert.equal(defaults, null);
+});
