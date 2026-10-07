@@ -1,7 +1,38 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { parseColor, toHex, deltaE } from "../src/color.mjs";
-import { mergeInventories, lintInventory, classifyTokens, flattenTokens, fitTypeScale, colorKey, clusterColors, renderLint, lintForPrompt } from "../src/lint.mjs";
+import { mergeInventories, lintInventory, classifyTokens, flattenTokens, fitTypeScale, colorKey, clusterColors, renderLint, lintForPrompt, lintScheme, lintCapture } from "../src/lint.mjs";
+import { mkdtemp, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+
+test("the lint judges the design as authored: variants are left out and a dark theme is linted on its own", async () => {
+  assert.equal(lintScheme({}), "light");
+  assert.equal(lintScheme({ colorScheme: "dark" }), "dark");
+  for (const vp of [{ forcedColors: true }, { textSpacing: true }, { vision: "deuteranopia" }, { zoom: 2 }]) assert.equal(lintScheme(vp), null);
+  const dir = await mkdtemp(path.join(tmpdir(), "uic-lint-themes-"));
+  const inventory = (tokens, color) => ({ tokens, colors: [{ value: color, count: 3, samples: ["p"] }], backgrounds: [], borders: [] });
+  await writeFile(path.join(dir, "light.json"), JSON.stringify(inventory({ "--ink": "#111111" }, "rgb(17, 17, 17)")));
+  await writeFile(path.join(dir, "dark.json"), JSON.stringify(inventory({ "--ink": "#eeeeee" }, "rgb(238, 238, 238)")));
+  await writeFile(path.join(dir, "forced.json"), JSON.stringify(inventory({ "--ink": "#111111" }, "rgb(0, 0, 255)")));
+  await writeFile(
+    path.join(dir, "manifest.json"),
+    JSON.stringify({
+      label: "t",
+      base: "x",
+      viewports: { desktop: { width: 1, height: 1 }, dark: { width: 1, height: 1, colorScheme: "dark" }, "forced-colors": { width: 1, height: 1, forcedColors: true } },
+      shots: [
+        { route: "/", viewport: "desktop", styles: path.join(dir, "light.json") },
+        { route: "/", viewport: "dark", styles: path.join(dir, "dark.json") },
+        { route: "/", viewport: "forced-colors", styles: path.join(dir, "forced.json") },
+      ],
+    }),
+  );
+  const r = await lintCapture(dir);
+  assert.equal(r.metrics.tokenCoverage, 1, "light text is its light token");
+  assert.equal(r.metrics.darkTokenCoverage, 1, "dark text is its dark token, not drift from the light one");
+  assert.ok(!r.findings.some((f) => JSON.stringify(f).includes("#0000ff")), "forced colours are system colours, not design");
+});
 
 test("colours parse from hex, rgb and rgba, as browsers compute them", () => {
   assert.deepEqual(parseColor("#5A3EC8"), { rgb: [90, 62, 200], a: 1 });

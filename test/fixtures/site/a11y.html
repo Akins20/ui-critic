@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Accessibility variants</title>
+<style>
+  body { margin: 0; font: 16px/1.5 Arial, sans-serif; color: #111; background: #fff; }
+  main { padding: 16px; }
+  /* Wider than a 320px screen and not in a scroller: horizontal scrolling on reflow. */
+  .wide-table { width: 600px; background: #f1f1f1; padding: 8px; }
+  /* A fixed-height label that clips when text spacing grows. */
+  .tight { height: 24px; overflow: hidden; width: 200px; line-height: 24px; border: 1px solid #ccc; }
+  .ellipsis { width: 90px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .carousel { display: flex; gap: 8px; overflow-x: auto; width: 100%; }
+  .carousel div { flex: 0 0 240px; height: 60px; background: #eee; }
+  .error { color: #d32f2f; } .success { color: #388e3c; }
+  @media (prefers-color-scheme: dark) { body { background: #121212; color: #eee; } }
+</style>
+</head>
+<body>
+<main>
+  <h1>Variants</h1>
+  <div class="wide-table">A table that does not reflow</div>
+  <div class="tight">Fixed height label text</div>
+  <div class="ellipsis">Truncated long text that is cut off</div>
+  <div class="carousel"><div>Card one</div><div>Card two</div><div>Card three</div></div>
+  <p class="error">Payment failed</p>
+  <p class="success">Payment received</p>
+</main>
+</body>
+</html>

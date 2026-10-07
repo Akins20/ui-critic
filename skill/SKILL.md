@@ -61,6 +61,8 @@ not see the code or the product decisions, only what you give it.
    the config. Thinking
    `high` by default; `--include-thoughts` when you need to audit why a finding was made.
 4. **Run before.** `ui-critic run --base <url> --label before --follow-requests --json`.
+   Add `--a11y` when accessibility matters to the work (reflow, zoom, text spacing,
+   forced colours, colour vision, dark); it costs more screenshots, so say so.
    Same-origin pages the critic asks for are captured and reviewed in the same run. Read
    `critique.md`, including the measured facts line per page and the usage line. Point the
    user at `critique.html` (findings boxed on the screenshots) when they want to see them.

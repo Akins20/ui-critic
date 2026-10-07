@@ -44,6 +44,51 @@ export function toLab([r, g, b]) {
   return [116 * f(y) - 16, 500 * (f(x) - f(y)), 200 * (f(y) - f(z))];
 }
 
+/**
+ * Machado, Oliveira and Fernandes (2009) matrices for full dichromacy, applied in
+ * linear RGB: how a colour looks to a person with protanopia, deuteranopia or
+ * tritanopia.
+ */
+const VISION = {
+  protanopia: [
+    [0.152286, 1.052583, -0.204868],
+    [0.114503, 0.786281, 0.099216],
+    [-0.003882, -0.048116, 1.051998],
+  ],
+  deuteranopia: [
+    [0.367322, 0.860646, -0.227968],
+    [0.280085, 0.672501, 0.047413],
+    [-0.01182, 0.04294, 0.968881],
+  ],
+  tritanopia: [
+    [1.255528, -0.076749, -0.178779],
+    [-0.078411, 0.930809, 0.147602],
+    [0.004733, 0.691367, 0.3039],
+  ],
+};
+
+export const VISION_SIMULATIONS = Object.keys(VISION);
+
+/** A colour as a person with the given colour-vision deficiency sees it. */
+export function simulateVision(rgb, type) {
+  const m = VISION[type];
+  if (!m) return rgb;
+  const lin = rgb.map((v) => {
+    const c = v / 255;
+    return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  });
+  return m.map((row) => {
+    const c = Math.min(1, Math.max(0, row[0] * lin[0] + row[1] * lin[1] + row[2] * lin[2]));
+    return Math.round((c <= 0.0031308 ? 12.92 * c : 1.055 * c ** (1 / 2.4) - 0.055) * 255);
+  });
+}
+
+/** How colourful a colour is (CIELab chroma); greys are near 0. */
+export function chroma(rgb) {
+  const [, a, b] = toLab(rgb);
+  return Math.hypot(a, b);
+}
+
 /** CIEDE2000 colour difference between two sRGB colours. */
 export function deltaE(rgb1, rgb2) {
   const [L1, a1, b1] = toLab(rgb1);

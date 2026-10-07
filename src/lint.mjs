@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { parseColor, toHex, deltaE } from "./color.mjs";
+import { parseColor, toHex, deltaE, simulateVision, chroma, VISION_SIMULATIONS } from "./color.mjs";
 
 /**
  * The design-system lint: what a site's pages actually use for colour, type,
@@ -216,6 +216,42 @@ export function lintInventory(inv, options = {}) {
     });
   }
 
+  // Colour vision: colours clearly different to most people that collapse into one
+  // for someone with a colour-vision deficiency. Greys carry no hue, so a pair needs
+  // at least one colourful member.
+  const hues = opaque.slice(0, 16).map((e) => ({ ...e, rgb: parseColor(e.value).rgb })).filter((e) => chroma(e.rgb) > 15);
+  const collapses = [];
+  for (let i = 0; i < hues.length; i += 1) {
+    for (let j = i + 1; j < hues.length; j += 1) {
+      const normal = deltaE(hues[i].rgb, hues[j].rgb);
+      if (normal < 12) continue;
+      for (const type of VISION_SIMULATIONS) {
+        const seen = deltaE(simulateVision(hues[i].rgb, type), simulateVision(hues[j].rgb, type));
+        // Collapsed: hard to see apart, and most of the difference gone.
+        if (seen < 8 && seen < normal * 0.3) {
+          collapses.push({
+            value: `${hues[i].value} and ${hues[j].value}`,
+            count: Math.min(hues[i].count, hues[j].count),
+            pages: hues[i].pages.filter((p) => hues[j].pages.includes(p)),
+            samples: [hues[i].samples[0], hues[j].samples[0]].filter(Boolean),
+            note: `look alike with ${type} (a difference of ${Math.round(seen * 10) / 10}, against ${Math.round(normal)} for most people)`,
+          });
+          break;
+        }
+      }
+    }
+  }
+  if (collapses.length) {
+    findings.push({
+      rule: "color-vision",
+      severity: "medium",
+      title: `${collapses.length} pair${collapses.length === 1 ? "" : "s"} of colours that some readers cannot tell apart`,
+      detail: "About one in twelve men has a colour-vision deficiency. When colour alone separates two meanings (error and success, sale and regular), these readers lose the difference.",
+      values: top(collapses),
+      fix: "Where the pair carries meaning, add a second cue: an icon, a label, a pattern or a weight change.",
+    });
+  }
+
   // Type.
   const sizes = Array.from(inv.sizes.values()).sort((a, b) => b.count - a.count);
   metrics.fontSizes = sizes.length;
@@ -306,14 +342,30 @@ export function lintInventory(inv, options = {}) {
   return { metrics, tokens: { colors: tokenColors.length, lengths: tokenLengths.length }, findings, proposal };
 }
 
-/** Loads the style inventories of a capture and lints them. */
+/**
+ * Which theme a viewport shows the authored styles in, or null when its styles are
+ * not the design as written: forced colours replace them with system colours, and
+ * text spacing, zoom and colour-vision variants only repeat or stretch them.
+ */
+export function lintScheme(vp = {}) {
+  if (vp.forcedColors || vp.textSpacing || vp.vision || vp.zoom > 1) return null;
+  return vp.colorScheme === "dark" ? "dark" : "light";
+}
+
+/**
+ * Loads the style inventories of a capture and lints them, one theme at a time: a
+ * dark theme has its own token values, so it is checked against those and its
+ * findings say so.
+ */
 export async function lintCapture(dir, options = {}) {
   const manifest = JSON.parse(await readFile(path.join(dir, "manifest.json"), "utf8"));
   const items = [];
   for (const shot of manifest.shots ?? []) {
     if (!shot.styles) continue;
+    const scheme = lintScheme(manifest.viewports?.[shot.viewport]);
+    if (!scheme) continue;
     try {
-      items.push({ route: shot.route, viewport: shot.viewport, styles: JSON.parse(await readFile(shot.styles, "utf8")) });
+      items.push({ route: shot.route, viewport: shot.viewport, scheme, styles: JSON.parse(await readFile(shot.styles, "utf8")) });
     } catch {
       // a shot whose inventory could not be read is left out
     }
@@ -323,9 +375,19 @@ export async function lintCapture(dir, options = {}) {
   }
   let extraTokens = {};
   if (options.tokens) extraTokens = flattenTokens(JSON.parse(await readFile(path.resolve(options.tokens), "utf8")));
-  const inv = mergeInventories(items);
-  const result = lintInventory(inv, { ...options, extraTokens });
-  return { tool: "ui-critic", kind: "lint", base: manifest.base, label: manifest.label, pages: Array.from(new Set(items.map((i) => i.route))), generatedAt: new Date().toISOString(), ...result };
+  const light = items.filter((i) => i.scheme === "light");
+  const dark = items.filter((i) => i.scheme === "dark");
+  const main = lintInventory(mergeInventories(light.length ? light : dark), { ...options, extraTokens });
+  if (light.length && dark.length) {
+    // The dark theme against its own tokens; its sprawl rules repeat the light ones,
+    // so only its colour findings are added.
+    const night = lintInventory(mergeInventories(dark), { ...options, extraTokens: {} });
+    for (const f of night.findings.filter((x) => x.rule.startsWith("color"))) main.findings.push({ ...f, rule: `${f.rule}-dark`, title: `Dark theme: ${f.title}` });
+    main.metrics.darkTokenCoverage = night.metrics.tokenCoverage ?? null;
+  }
+  const order = { high: 0, medium: 1, low: 2 };
+  main.findings.sort((a, b) => order[a.severity] - order[b.severity]);
+  return { tool: "ui-critic", kind: "lint", base: manifest.base, label: manifest.label, pages: Array.from(new Set(items.map((i) => i.route))), generatedAt: new Date().toISOString(), ...main };
 }
 
 /** The lint as Markdown. */

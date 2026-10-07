@@ -2,7 +2,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { imagePart, text } from "./parts.mjs";
 import { createClient } from "./provider.mjs";
-import { preamble, briefSection, disciplinesFor } from "./critique.mjs";
+import { preamble, briefSection, disciplinesFor, variantNotes } from "./critique.mjs";
 import { allImages, nouns } from "./shots.mjs";
 import { renderCompareHTML } from "./html.mjs";
 import { renderCompare } from "./report.mjs";
@@ -141,6 +141,8 @@ export async function compare({ before, after, config }) {
   const prefix = [text(preamble(disciplinesFor(config, platform), config.principles, platform)), text(briefSection(config.briefText))];
   if (decisions.length) prefix.push(text(decisionsSection(decisions) + "\nDo not list a settled decision as regressed or still open."));
   if (extra) prefix.push(text(extra));
+  const variants = variantNotes(ma.viewports);
+  if (variants) prefix.push(text(variants));
   const confirm = config.compare?.confirmRegressions !== false;
   const cached = await client.ensureCache(prefix, `ui-critic compare ${ma.label}`);
   // Every finished pair is checkpointed, so a run cut short (a timeout, a lost

@@ -112,6 +112,44 @@ test("the interaction sweep finds missing hover and focus feedback, invisible st
   assert.ok(shot.fold.endsWith(".fold.png"));
 });
 
+test("accessibility variants render as asked and their layout failures are measured", { skip, timeout: 240_000 }, async () => {
+  const out = await mkdtemp(path.join(tmpdir(), "uic-a11y-"));
+  const mobile = { width: 390, height: 844, deviceScaleFactor: 2, isMobile: true };
+  const desktop = { width: 1024, height: 700, deviceScaleFactor: 1 };
+  const manifest = await capture({
+    base,
+    routes: ["/a11y.html"],
+    viewports: {
+      desktop,
+      mobile,
+      "reflow-320": { width: 320, height: 640, deviceScaleFactor: 2, isMobile: true, a11yPreset: true },
+      "zoom-200": { ...desktop, zoom: 2, a11yPreset: true },
+      "text-spacing": { ...mobile, textSpacing: true, a11yPreset: true },
+      "forced-colors": { ...desktop, forcedColors: true, a11yPreset: true },
+      deuteranopia: { ...mobile, vision: "deuteranopia", a11yPreset: true },
+      dark: { ...desktop, colorScheme: "dark", a11yPreset: true },
+    },
+    out,
+    label: "t",
+    sweep: { enabled: false },
+  });
+  const shot = (vp) => manifest.shots.find((s) => s.viewport === vp);
+  const facts = async (vp) => JSON.parse(await readFile(shot(vp).audit, "utf8"));
+  const reflow = (await facts("reflow-320")).layout;
+  assert.equal(reflow.horizontalScroll, true);
+  assert.ok(reflow.offEdge.some((e) => e.startsWith("div.wide-table")), `the 600px table runs off a 320px screen (${reflow.offEdge})`);
+  assert.ok(!reflow.offEdge.some((e) => e.includes("Card")), "carousel cards are in a scroller and do not count");
+  assert.ok((await facts("mobile")).layout.clippedText.every((e) => !e.startsWith("div.tight")), "the label fits at normal spacing");
+  assert.ok((await facts("text-spacing")).layout.clippedText.some((e) => e.startsWith("div.tight")), "and is cut off at WCAG text spacing");
+  assert.ok((await facts("desktop")).layout.clippedText.some((e) => e.startsWith("div.ellipsis")));
+  assert.equal((await facts("zoom-200")).viewport.width, 512, "200% zoom halves the CSS viewport");
+  const png = async (vp) => readFile(shot(vp).fold);
+  assert.ok(!(await png("deuteranopia")).equals(await png("mobile")), "the colour-vision simulation changes the render");
+  assert.ok(!(await png("forced-colors")).equals(await png("desktop")), "forced colours change the render");
+  const darkStyles = JSON.parse(await readFile(shot("dark").styles, "utf8"));
+  assert.ok(JSON.stringify(darkStyles.backgrounds).includes("rgb(18, 18, 18)"), "the dark scheme applied the page's dark background");
+});
+
 test("the design-system lint reads the real computed styles and finds the planted drift", { skip, timeout: 120_000 }, async () => {
   const out = await mkdtemp(path.join(tmpdir(), "uic-lint-"));
   const manifest = await capture({

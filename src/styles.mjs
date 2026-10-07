@@ -29,6 +29,12 @@ export function stylesScript() {
     map.set(value, entry);
   };
   const transparent = (c) => !c || c === "transparent" || /rgba\([^)]*,\s*0\)$/.test(c);
+  // The page's own background, on the root or the body, is the colour the whole
+  // design sits on; it is counted with the rest.
+  for (const root of [document.documentElement, document.body]) {
+    const bg = getComputedStyle(root).backgroundColor;
+    if (!transparent(bg)) add("backgrounds", bg, root);
+  }
   const longLines = [];
   const elements = Array.from(document.querySelectorAll("body *")).filter(visible).slice(0, 5000);
   for (const el of elements) {

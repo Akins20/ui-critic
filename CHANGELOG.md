@@ -41,6 +41,14 @@
   annotation for each confirmed regression; `summary` and `comment` do the same anywhere.
 - The web capture is tested end to end in a real browser against a fixture site with
   planted defects, in CI on every change.
+- Accessibility variants: viewports can set `zoom`, `textSpacing`, `forcedColors` and
+  `vision`, and `--a11y` adds 320px reflow, 200% zoom, text spacing, forced colours,
+  deuteranopia and dark; the critic is told what each tests. Every web capture now
+  measures sideways scrolling, elements off the edge and cut-off text, against the
+  device's layout width (a phone widens innerWidth to fit overflow, which hid it).
+- The lint gains a colour-vision rule (colours that collapse for protanopia,
+  deuteranopia or tritanopia), counts the page background, leaves variants out, and
+  lints a dark theme against its own tokens.
 - Interaction sweep on desktop viewports: every control hovered and compared with its
   rest look, and the page walked with Tab for visible focus (WCAG 2.4.7), invisible
   stops, backward jumps (WCAG 2.4.3), skip links, traps and positive tabindex. Every

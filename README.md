@@ -263,6 +263,32 @@ Calls run a few at a time (`concurrency`, default 3, `--concurrency N`,
 `UI_CRITIC_CONCURRENCY`); each finished page or pair is checkpointed as it lands and the
 report keeps the capture order.
 
+## Accessibility variants
+
+Every web capture measures layout at its width: whether the page scrolls sideways,
+which elements run off the edge (content inside a horizontal scroller, such as a
+carousel, does not count) and which text is cut off by its box (text hidden on purpose
+for screen readers does not count). On a phone the layout width is the device's, not
+the wider one the browser adopts when content overflows, so overflow is never hidden
+by the measurement.
+
+Viewports can ask for the conditions WCAG tests against: `zoom` (2 is browser zoom at
+200%, WCAG 1.4.4), `textSpacing` (WCAG 1.4.12's raised line, letter, word and paragraph
+spacing), `forcedColors` (Windows high contrast), `vision` (`deuteranopia`,
+`protanopia`, `tritanopia`, `achromatopsia`, `blurredVision`, `reducedContrast`) and
+`colorScheme: "dark"`. `--a11y` (or `"a11y": true`) adds a ready set beside your own
+viewports: `reflow-320`, `zoom-200`, `text-spacing`, `forced-colors`, `deuteranopia` and
+`dark` when none of yours is dark. The critic is told what each variant tests, so a
+200% capture is judged for overlap and cut-off content rather than for its larger
+type. Scenarios and the interaction sweep skip the variants unless a scenario names
+one.
+
+The free lint adds a colour-vision rule: pairs of colours the site uses that most
+people tell apart easily but that look alike with protanopia, deuteranopia or
+tritanopia (an error red and a success green, say), using the Machado 2009
+simulation. It judges the design as authored: variants that only restyle the page are
+left out, and a dark theme is checked against its own tokens.
+
 ## Interaction sweep
 
 A screenshot of a resting page cannot show whether a control reacts. On every desktop

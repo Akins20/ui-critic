@@ -231,7 +231,7 @@ export async function captureRoute({ page, base, route, viewportName, dir, hideS
  * none on a touch viewport, which has neither hover nor, usually, a keyboard.
  */
 export function sweepFor(sweep, vp) {
-  if (!sweep || sweep.enabled === false || vp.isMobile) return null;
+  if (!sweep || sweep.enabled === false || vp.isMobile || vp.a11yPreset) return null;
   return { hover: true, maxHover: sweep.maxHover ?? 20, maxTabs: sweep.maxTabs ?? 60 };
 }
 
@@ -265,17 +265,60 @@ export async function captureScenario({ page, base, scenario, viewportName, dir,
   return shoot({ page, dir, slug, viewportName, route: scenario.route, label, extra: { scenario: scenario.name, steps, stepError: error, auth: Boolean(scenario.auth) }, runtime });
 }
 
-/** Opens a browser context for one named viewport with motion reduced and a light scheme. */
+/**
+ * Opens a browser context for one named viewport, with motion reduced and a light
+ * scheme unless the viewport says otherwise. A viewport may also ask for browser
+ * zoom (the CSS viewport shrinks and pixels grow, exactly as zooming in does),
+ * forced colours (Windows high contrast), and text spacing, whose style overrides
+ * must be allowed past the page's Content-Security-Policy.
+ */
 export async function openContext(browser, vp, extra = {}) {
+  const zoom = vp.zoom > 0 ? vp.zoom : 1;
   return browser.newContext({
-    viewport: { width: vp.width, height: vp.height },
-    deviceScaleFactor: vp.deviceScaleFactor ?? 1,
+    viewport: { width: Math.round(vp.width / zoom), height: Math.round(vp.height / zoom) },
+    deviceScaleFactor: (vp.deviceScaleFactor ?? 1) * zoom,
     isMobile: Boolean(vp.isMobile),
     hasTouch: Boolean(vp.isMobile),
     colorScheme: vp.colorScheme ?? "light",
     reducedMotion: "reduce",
+    ...(vp.forcedColors ? { forcedColors: "active" } : {}),
+    ...(vp.textSpacing ? { bypassCSP: true } : {}),
     ...extra,
   });
+}
+
+/** WCAG 1.4.12's text spacing: the most a reader may set without content breaking. */
+export const TEXT_SPACING_CSS =
+  "*:not(svg):not(svg *){line-height:1.5 !important;letter-spacing:0.12em !important;word-spacing:0.16em !important}p{margin-bottom:2em !important}";
+
+const TEXT_SPACING_SCRIPT = `(() => {
+  const add = () => {
+    if (document.getElementById("uic-text-spacing")) return;
+    const s = document.createElement("style");
+    s.id = "uic-text-spacing";
+    s.textContent = ${JSON.stringify(TEXT_SPACING_CSS)};
+    (document.head || document.documentElement).appendChild(s);
+  };
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", add);
+  else add();
+})();`;
+
+/** The colour-vision simulations Chromium can render. */
+export const VISION_TYPES = ["achromatopsia", "deuteranopia", "protanopia", "tritanopia", "blurredVision", "reducedContrast"];
+
+/** Applies a viewport's page-level emulation: text spacing overrides and a colour-vision simulation. */
+export async function preparePage(page, vp) {
+  if (vp.textSpacing) await page.addInitScript(TEXT_SPACING_SCRIPT);
+  if (vp.vision) {
+    const cdp = await page.context().newCDPSession(page);
+    await cdp.send("Emulation.setEmulatedVisionDeficiency", { type: vp.vision });
+  }
+  return page;
+}
+
+/** A new page in a context, prepared for its viewport. */
+async function newPageFor(context, vp) {
+  return preparePage(await context.newPage(), vp);
 }
 
 /**
@@ -313,8 +356,10 @@ async function openAuthContext(browser, vp, auth, base, secrets) {
 }
 
 /** Scenarios that apply at a viewport: all of them unless the scenario lists viewports. */
-export function scenariosAt(scenarios, viewportName) {
-  return scenarios.filter((s) => !s.viewports || s.viewports.includes(viewportName));
+export function scenariosAt(scenarios, viewportName, vp = null) {
+  // An accessibility variant added by --a11y reviews the routes; a scenario runs there
+  // only when it names the variant.
+  return scenarios.filter((s) => (s.viewports ? s.viewports.includes(viewportName) : !vp?.a11yPreset));
 }
 
 /**
@@ -338,7 +383,7 @@ export async function capture({ base, routes, scenarios = [], auth = null, viewp
   try {
     for (const [viewportName, vp] of Object.entries(viewports)) {
       const anon = await openContext(browser, vp);
-      const page = await anon.newPage();
+      const page = await newPageFor(anon, vp);
       for (const entry of entries.filter((e) => !e.auth)) {
         shots.push(await captureRoute({ page, base, route: entry.path, viewportName, dir, hideSelectors, sweep: sweepFor(sweep, vp) }));
         process.stderr.write(`  ${viewportName.padEnd(8)} ${entry.path}\n`);
@@ -346,9 +391,9 @@ export async function capture({ base, routes, scenarios = [], auth = null, viewp
       await anon.close();
       // Every scenario starts from a clean context, so a saved wishlist, a
       // switched theme or a typed query never leaks into the next capture.
-      for (const scenario of scenariosAt(scenarios, viewportName).filter((s) => !s.auth)) {
+      for (const scenario of scenariosAt(scenarios, viewportName, vp).filter((s) => !s.auth)) {
         const fresh = await openContext(browser, vp);
-        const freshPage = await fresh.newPage();
+        const freshPage = await newPageFor(fresh, vp);
         const shot = await captureScenario({ page: freshPage, base, scenario, viewportName, dir, hideSelectors, secrets });
         await fresh.close();
         shots.push(shot);
@@ -356,7 +401,7 @@ export async function capture({ base, routes, scenarios = [], auth = null, viewp
       }
 
       const authEntries = entries.filter((e) => e.auth);
-      const authScenarios = scenariosAt(scenarios, viewportName).filter((s) => s.auth);
+      const authScenarios = scenariosAt(scenarios, viewportName, vp).filter((s) => s.auth);
       if (authEntries.length || authScenarios.length) {
         const { context, reason } = await openAuthContext(browser, vp, auth, base, secrets);
         if (!context) {
@@ -364,7 +409,7 @@ export async function capture({ base, routes, scenarios = [], auth = null, viewp
           process.stderr.write(`  ${viewportName.padEnd(8)} signed-in pages skipped: ${reason}\n`);
         } else {
           const session = await context.storageState();
-          const authPage = await context.newPage();
+          const authPage = await newPageFor(context, vp);
           for (const entry of authEntries) {
             shots.push(await captureRoute({ page: authPage, base, route: entry.path, viewportName, dir, hideSelectors, auth: true, sweep: sweepFor(sweep, vp) }));
             process.stderr.write(`  ${viewportName.padEnd(8)} ${entry.path} (signed in)\n`);
@@ -372,7 +417,7 @@ export async function capture({ base, routes, scenarios = [], auth = null, viewp
           await context.close();
           for (const scenario of authScenarios) {
             const fresh = await openContext(browser, vp, { storageState: session });
-            const freshPage = await fresh.newPage();
+            const freshPage = await newPageFor(fresh, vp);
             const shot = await captureScenario({ page: freshPage, base, scenario, viewportName, dir, hideSelectors, secrets });
             await fresh.close();
             shots.push(shot);
@@ -419,14 +464,14 @@ export async function captureMore(manifest, routes, { auth = null, secrets = {} 
   try {
     for (const [viewportName, vp] of Object.entries(manifest.viewports)) {
       const context = await openContext(browser, vp);
-      const page = await context.newPage();
+      const page = await newPageFor(context, vp);
       let signedIn = null;
       for (const route of routes) {
         let shot = await captureRoute({ page, base: manifest.base, route, viewportName, dir: manifest.dir, hideSelectors: manifest.hideSelectors ?? [] });
         if (auth && redirectedAway(route, shot.url, manifest.base)) {
           if (!signedIn) {
             const opened = await openAuthContext(browser, vp, auth, manifest.base, secrets);
-            signedIn = opened.context ? { context: opened.context, page: await opened.context.newPage() } : { context: null, reason: opened.reason };
+            signedIn = opened.context ? { context: opened.context, page: await newPageFor(opened.context, vp) } : { context: null, reason: opened.reason };
           }
           if (signedIn.context) {
             shot = await captureRoute({ page: signedIn.page, base: manifest.base, route, viewportName, dir: manifest.dir, hideSelectors: manifest.hideSelectors ?? [], auth: true });

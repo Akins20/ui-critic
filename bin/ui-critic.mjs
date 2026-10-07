@@ -90,6 +90,8 @@ Options (flags win over env, env over ui-critic.config.json, file over defaults)
   --concurrency <1..8>    calls in flight at once (default 3)
   --no-confirm            skip the second look that confirms each reported regression
   --no-sweep              skip the hover and keyboard sweep of each page (on by default for desktop viewports)
+  --a11y                  add accessibility variants: 320px reflow, 200% zoom, text spacing, forced colours,
+                          deuteranopia and dark, beside the configured viewports
   --provider gemini|openai   the critic (default: inferred from the model id, gemini)
   --fail-on measured|regressed|worse   (compare/verify: exit 2 when any page matches;
                           measured = a confirmed regression backed by a measured fact, the CI-safe choice)
@@ -135,6 +137,7 @@ const OPTIONS = {
   artifact: { type: "string" },
   pr: { type: "string" },
   "no-sweep": { type: "boolean" },
+  a11y: { type: "boolean" },
   help: { type: "boolean", short: "h" },
 };
 

@@ -116,6 +116,48 @@ export function auditScript() {
     });
   }
   const lowContrast = pairs.filter((p) => !p.passesAA).sort((a, b) => a.ratio - b.ratio).slice(0, 8);
+
+  // Layout at this width: content running off the side (WCAG 1.4.10 reflow) and text
+  // cut off by its box. Elements inside a horizontal scroller (a carousel) are meant
+  // to run past the edge and do not count; the page's own overflow does.
+  const label = (el) => `${el.tagName.toLowerCase()}${el.className && typeof el.className === "string" ? "." + el.className.trim().split(/\s+/)[0] : ""} "${(el.textContent || "").trim().replace(/\s+/g, " ").slice(0, 32)}"`;
+  const inScroller = (el) => {
+    for (let n = el.parentElement; n && n !== document.body && n !== document.documentElement; n = n.parentElement) {
+      const ox = cs(n).overflowX;
+      if (ox === "auto" || ox === "scroll" || ox === "hidden" || ox === "clip") return true;
+    }
+    return false;
+  };
+  // The layout width the page was designed for. On a phone, content wider than the
+  // screen makes the browser widen innerWidth to fit it, which would hide the very
+  // overflow being measured; clientWidth stays the device width.
+  const layoutWidth = document.documentElement.clientWidth || innerWidth;
+  const offEdge = [];
+  for (const el of Array.from(document.querySelectorAll("body *")).filter(visible)) {
+    const r = el.getBoundingClientRect();
+    if (r.right <= layoutWidth + 1 || r.left >= layoutWidth) continue;
+    if (inScroller(el) || offEdge.some((o) => o.contains(el))) continue;
+    offEdge.push(el);
+    if (offEdge.length >= 8) break;
+  }
+  const clipped = Array.from(document.querySelectorAll("body *"))
+    .filter(visible)
+    // Text hidden on purpose for screen readers (the clip technique) is meant to be cut.
+    .filter((el) => !hiddenVisually(el) && el.getBoundingClientRect().width > 2 && el.getBoundingClientRect().height > 2)
+    .filter((el) => Array.from(el.childNodes).some((n) => n.nodeType === 3 && n.textContent.trim()))
+    .filter((el) => {
+      const s = cs(el);
+      const clips = s.overflowX !== "visible" || s.overflowY !== "visible" || s.textOverflow === "ellipsis";
+      return clips && (el.scrollWidth > el.clientWidth + 1 || el.scrollHeight > el.clientHeight + 1);
+    })
+    .slice(0, 8);
+  const layout = {
+    horizontalScroll: document.documentElement.scrollWidth > layoutWidth + 1,
+    layoutWidth,
+    scrollWidth: document.documentElement.scrollWidth,
+    offEdge: offEdge.map(label),
+    clippedText: clipped.map(label),
+  };
   return {
     title: document.title,
     lang: document.documentElement.lang || null,
@@ -136,6 +178,7 @@ export function auditScript() {
       under24px: interactive.filter((t) => t.w < 24 || t.h < 24).slice(0, 10),
     },
     textContrast: { sampled: pairs.length, failingAA: pairs.filter((p) => !p.passesAA).length, lowest: lowContrast, overImage: unmeasured },
+    layout,
   };
 }
 
@@ -179,6 +222,12 @@ export function auditSummary(audit) {
     const failed = (rt.failedRequests?.length ?? 0) + (rt.httpErrors?.length ?? 0);
     parts.push(`${errors} console errors`, `${failed} failed requests`);
     if (typeof rt.cls === "number") parts.push(`layout shift ${rt.cls}`);
+  }
+  const lay = audit.layout;
+  if (lay) {
+    if (lay.horizontalScroll) parts.push(`scrolls sideways (${lay.scrollWidth}px wide)`);
+    if (lay.offEdge?.length) parts.push(`${lay.offEdge.length} elements run off the edge`);
+    if (lay.clippedText?.length) parts.push(`${lay.clippedText.length} texts cut off`);
   }
   const ix = audit.interaction;
   if (ix && !ix.error) {

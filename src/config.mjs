@@ -4,6 +4,9 @@ import { fileURLToPath } from "node:url";
 import { stepProblems, normalizeRoute } from "./steps.mjs";
 import { nativeStepProblems, nativeRouteProblems } from "./native/steps.mjs";
 
+/** The colour-vision simulations Chromium renders (kept here so config has no browser code). */
+const VISION_TYPES = ["achromatopsia", "deuteranopia", "protanopia", "tritanopia", "blurredVision", "reducedContrast"];
+
 /** What a capture can be of: a website, an Android app, an iOS app. */
 export const PLATFORMS = ["web", "android", "ios"];
 
@@ -37,6 +40,29 @@ export const IOS_DEFAULTS = {
   cleanStatusBar: true,
   settleMs: 1500,
 };
+
+/**
+ * The accessibility variants --a11y adds beside the configured viewports, built
+ * from them: 320px reflow (WCAG 1.4.10), 200% zoom (1.4.4), raised text spacing
+ * (1.4.12) and a colour-vision simulation on the phone, forced colours (Windows
+ * high contrast) on the desktop, and the dark scheme when no viewport has it.
+ * Scenarios and the interaction sweep skip them unless a scenario names one.
+ */
+export function a11yViewports(viewports) {
+  const all = Object.values(viewports ?? {});
+  const desk = all.find((v) => !v.isMobile) ?? DEFAULT_VIEWPORTS.desktop;
+  const phone = all.find((v) => v.isMobile) ?? DEFAULT_VIEWPORTS.mobile;
+  const base = (vp) => ({ width: vp.width, height: vp.height, deviceScaleFactor: vp.deviceScaleFactor ?? 1, isMobile: Boolean(vp.isMobile), a11yPreset: true });
+  const out = {
+    "reflow-320": { width: 320, height: 640, deviceScaleFactor: 2, isMobile: true, a11yPreset: true },
+    "zoom-200": { ...base(desk), zoom: 2 },
+    "text-spacing": { ...base(phone), textSpacing: true },
+    "forced-colors": { ...base(desk), forcedColors: true },
+    deuteranopia: { ...base(phone), vision: "deuteranopia" },
+  };
+  if (!all.some((v) => v.colorScheme === "dark")) out.dark = { ...base(desk), colorScheme: "dark" };
+  return out;
+}
 
 /** A native capture's viewports are variants of the one device; the default is the device as it is. */
 export const NATIVE_VIEWPORTS = { phone: {} };
@@ -178,6 +204,9 @@ export const DEFAULTS = {
   // The interaction sweep on viewports with a mouse: hover up to maxHover controls,
   // and walk the page with up to maxTabs presses of Tab. Nothing is clicked.
   sweep: { enabled: true, maxHover: 20, maxTabs: 60 },
+  // Add the accessibility variants (reflow, zoom, text spacing, forced colours, a
+  // colour-vision simulation, dark) beside the configured viewports; --a11y.
+  a11y: false,
   fromImages: undefined,
   json: false,
   failOn: undefined,
@@ -267,6 +296,7 @@ export function flagOverrides(flags, env = process.env) {
   if (flags["bundle-id"] || flags.udid) o.ios = { ...(flags["bundle-id"] ? { bundleId: flags["bundle-id"] } : {}), ...(flags.udid ? { udid: flags.udid } : {}) };
   if (flags["from-images"]) o.fromImages = flags["from-images"];
   if (flags["no-sweep"]) o.sweep = { enabled: false };
+  if (flags.a11y) o.a11y = true;
   return o;
 }
 
@@ -347,7 +377,15 @@ export function validate(cfg) {
       if (vp.contentSize !== undefined && !IOS_CONTENT_SIZES.includes(vp.contentSize)) {
         throw new Error(`viewport ${name}: contentSize must be one of ${IOS_CONTENT_SIZES.join(", ")}`);
       }
-    } else if (!(vp.width > 0 && vp.height > 0)) throw new Error(`viewport ${name} needs a positive width and height`);
+    } else {
+      if (!(vp.width > 0 && vp.height > 0)) throw new Error(`viewport ${name} needs a positive width and height`);
+      if (vp.zoom !== undefined && !(typeof vp.zoom === "number" && vp.zoom >= 1 && vp.zoom <= 4)) throw new Error(`viewport ${name}: zoom must be a number from 1 to 4`);
+      if (vp.vision !== undefined && !VISION_TYPES.includes(vp.vision)) throw new Error(`viewport ${name}: vision must be one of ${VISION_TYPES.join(", ")}`);
+      if (vp.colorScheme !== undefined && !["light", "dark", "no-preference"].includes(vp.colorScheme)) throw new Error(`viewport ${name}: colorScheme must be light or dark`);
+      for (const flag of ["forcedColors", "textSpacing"]) {
+        if (vp[flag] !== undefined && typeof vp[flag] !== "boolean") throw new Error(`viewport ${name}: ${flag} must be true or false`);
+      }
+    }
   }
   if (!(Number.isInteger(cfg.followRequests.maxPages) && cfg.followRequests.maxPages >= 0)) {
     throw new Error("followRequests.maxPages must be a non-negative integer");
@@ -390,6 +428,10 @@ export async function loadConfig(flags = {}, env = process.env) {
     if (!file.viewports) merged.viewports = NATIVE_VIEWPORTS;
     if (!file.disciplines) merged.disciplines = NATIVE_DISCIPLINES;
     if (!file.routes && !flags.routes) merged.routes = ["launch"];
+  } else if (merged.a11y) {
+    // Added after the configured viewports; a configured name is never replaced.
+    const extra = Object.entries(a11yViewports(merged.viewports)).filter(([name]) => !(name in merged.viewports));
+    merged.viewports = { ...merged.viewports, ...Object.fromEntries(extra) };
   }
   const cfg = validate(merged);
   cfg.configPath = configPath;

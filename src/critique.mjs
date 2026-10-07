@@ -306,6 +306,28 @@ export function followablePages(requests, manifest, maxPages) {
 }
 
 /**
+ * What each accessibility or theme variant among the viewports tests, so the critic
+ * judges a 200% zoom capture for overlap and cut-off content rather than for its
+ * larger type, and says which variant a finding comes from.
+ */
+export function variantNotes(viewports = {}) {
+  const lines = [];
+  for (const [name, vp] of Object.entries(viewports)) {
+    const what = [];
+    if (vp.zoom > 1) what.push(`browser zoom at ${Math.round(vp.zoom * 100)}% (WCAG 1.4.4: everything must still work, with nothing overlapping or cut off)`);
+    if (vp.width > 0 && vp.width <= 320) what.push("a 320px-wide screen (WCAG 1.4.10 reflow: text content must not need sideways scrolling)");
+    if (vp.textSpacing) what.push("text spacing raised to WCAG 1.4.12's limits (line height 1.5, letter spacing 0.12em, word spacing 0.16em, paragraph spacing 2em): no text may be cut off or overlap");
+    if (vp.forcedColors) what.push("Windows high-contrast mode: icons, borders and focus indicators must survive and nothing may disappear");
+    if (vp.vision) what.push(`a simulation of ${vp.vision}: information carried by colour alone is lost, so it needs a second cue`);
+    if (vp.colorScheme === "dark") what.push("the dark colour scheme");
+    if (vp.night) what.push("the dark theme");
+    if (vp.fontScale && vp.fontScale !== 1) what.push(`the system font at ${vp.fontScale}x`);
+    if (what.length) lines.push(`- ${name}: ${what.join("; ")}`);
+  }
+  return lines.length ? `## Variants among the viewports\nJudge each variant for what it tests, and say which variant a finding comes from:\n${lines.join("\n")}` : "";
+}
+
+/**
  * The disciplines for a capture: the configured list, except that an app capture
  * reviewed with the untouched web list gets the native one, which speaks of platform
  * conventions instead of breakpoints.
@@ -423,6 +445,8 @@ export async function critique({ dir, config }) {
   const prefix = [text(preamble(disciplinesFor(config, platform), config.principles, platform)), text(briefSection(config.briefText))];
   if (decisions.length) prefix.push(text(decisionsSection(decisions)));
   if (extra) prefix.push(text(extra));
+  const variants = variantNotes(manifest.viewports);
+  if (variants) prefix.push(text(variants));
   for (const s of manifest.shots) {
     prefix.push(text(`Screenshot: ${s.route} at ${s.viewport}, ${fold} (${s.title})`), await imagePart(s.fold));
   }
