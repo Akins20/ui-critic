@@ -248,6 +248,7 @@ triage instead of obeying.
 | `benchmark --in dir [--name X]` | capture the competitors in `benchmarks` and compare them with your pages, page by page |
 | `lint --in dir` | design-system lint from the computed styles: token drift, palette, type, spacing, radius, shadow (free) |
 | `assets --in dir [--kind store\|social]` | store screenshots and social cards rendered from the screens already captured |
+| `fidelity --in dir [--file key]` | the build against its Figma frames: the design's own values against the rendered ones, each frame beside its screen |
 | `report --in dir` | render `critique.html` and `compare.html` again from saved results, with no calls |
 | `summary --in dir` | a short Markdown summary for a pull request or a CI job |
 | `comment --in dir [--pr N]` | post that summary on the pull request, or update the earlier one |
@@ -377,6 +378,42 @@ and the fix; the report ends with proposed scales (a palette, a fitted modular t
 scale, spacing and radii). Tokens beyond the page's own custom properties can come
 from `lint.tokens` (a flat map or W3C design tokens). `--fail-on lint` exits 2 on a
 high-severity finding, for CI.
+
+## Fidelity: the build against the design
+
+`ui-critic fidelity --in <dir> --file <key or Figma link>` checks what was built
+against what was designed. Figma hands over two things at once, so the check is two
+things: the frame's own numbers (fills, font sizes, corner radii, auto-layout
+spacing, shadows) against the values the page actually renders, which is measured and
+free of opinion; and the frame beside the screen for the critic, which is judgement.
+Put a token in `FIGMA_TOKEN` (a personal access token that can read the file). Nothing
+is written back to Figma, and the token never enters the config, the prompts or the
+reports.
+
+Screens pair with frames by name, so a frame called "Home / Desktop" matches `/` at
+the desktop viewport, and the viewport is read from the frame's name or its width.
+Where names do not say which screen is which, map them in the config:
+`"figma": { "frames": { "/": "12:34", "/shop@mobile": "12:35" } }`. Whatever stays
+unpaired is listed, both the screens with no frame and the frames with no screen.
+
+The measured half separates three things that are easy to confuse. A value is
+**drifted** when the page renders something close to a design value but not it (a
+`17px` where the design says `16px`): one design value can be the target of only one
+built value, the closest, so four near colours are not reported as four drifts from
+the same one. A value is **in the design but never rendered**, or **rendered but not
+in the design**. Colours compare by CIEDE2000, lengths within half a pixel, and
+values that cannot be compared never pair: a 92% white panel is not a mistyped opaque
+colour, and a 50% radius is not a 50px one. The pixel comparison only locates where
+the screen sits furthest from the frame ("top right"); it is deliberately not a score,
+because real content in place of a design's placeholder moves a great many pixels
+without anything being wrong. When a frame holds far less than the page renders it is
+probably partial or out of date, and the report says so before the list, so nobody
+reads what the frame omits as a fault in the build.
+
+The critic is told the measured facts and told plainly that real content, a state the
+design does not draw and a deliberate improvement are not failures. `--no-judge`
+keeps the run free and measured only. Results land in `fidelity.md`, `fidelity.json`
+and `fidelity.html`, with the rendered frames beside them.
 
 ## Store screenshots and social cards
 

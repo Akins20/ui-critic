@@ -86,6 +86,20 @@
   desktop, mobile or both, so a review of a phone and a tablet labelled tablet findings as
   desktop or mobile. A finding that applies everywhere now says `all` (it said `both`).
 - An empty `viewports` map is rejected with a clear message instead of capturing nothing.
+- Fidelity against the design (`ui-critic fidelity`): the Figma frames a screen was
+  built from, read over the REST API with a token from `FIGMA_TOKEN`. Two checks at
+  once: the frame's own values (fills, font sizes, radii, auto-layout spacing,
+  shadows) against what the page renders, free and measured, separating drift from a
+  value never rendered and one never designed; and the frame beside the screen for
+  the critic, told that real content, an undrawn state and a deliberate improvement
+  are not failures. Screens pair with frames by name and viewport, or by a map in the
+  config, and what stays unpaired is listed on both sides. A frame holding far less
+  than the page renders is called out as partial or out of date. The pixel comparison
+  names where the screen sits furthest from the frame and deliberately gives no score.
+  Only the shallow file index is fetched, not the whole document.
+- A report's pictures went missing on Windows when a capture recorded from a short
+  8.3 path ("ELIJAH~1.OGU") was rendered from the long one: the same folder, but the
+  image got a path climbing out to the drive root. Affected every HTML report.
 - Store screenshots and social cards (`ui-critic assets`): the screens a review already
   captured, rendered at Google Play, App Store 6.7-inch and 1200x630 social sizes as
   HTML photographed in the capture browser, so no design tool or image library is

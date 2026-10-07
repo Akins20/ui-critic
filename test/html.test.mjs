@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, writeFile, readFile, mkdir } from "node:fs/promises";
+import { mkdtemp, writeFile, readFile, mkdir, realpath } from "node:fs/promises";
+import { execSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { esc, relativeSrc, imageFile, shotImages, renderCritiqueHTML, renderCompareHTML, rerender } from "../src/html.mjs";
@@ -68,10 +69,20 @@ test("escaping covers every character that could break out of HTML", () => {
   assert.equal(esc(null), "");
 });
 
-test("image paths are relative to the report and use forward slashes", () => {
+test("image paths are relative to the report and use forward slashes", async () => {
   assert.equal(relativeSrc(dir, path.join(dir, "a.png")), "a.png");
   assert.equal(relativeSrc(dir, path.resolve("out", "after", "b.png")), "../after/b.png");
   assert.equal(relativeSrc(dir, null), "");
+
+  // A capture recorded from a Windows short path and a report rendered from the long
+  // one name the same folder: the picture beside the report must still be "a.png",
+  // not a path climbing out to the drive root.
+  const real = await mkdtemp(path.join(await realpath(tmpdir()), "uic-rel-"));
+  const shot = path.join(real, "a.png");
+  await writeFile(shot, "x");
+  const short = process.platform === "win32" ? execSync(`for %I in ("${real}") do @echo %~sI`, { shell: "cmd.exe" }).toString().trim() : real;
+  assert.equal(relativeSrc(real, path.join(short, "a.png")), "a.png", "the short form resolves to the same folder");
+  assert.equal(relativeSrc(short, shot), "a.png");
 });
 
 test("region images map to files: the first screen, the full page and scroll frames", () => {

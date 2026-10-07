@@ -26,6 +26,7 @@ import { lintCapture, renderLint } from "../src/lint.mjs";
 import { tryon } from "../src/tryon.mjs";
 import { benchmark } from "../src/benchmark.mjs";
 import { renderAssets } from "../src/assets.mjs";
+import { fidelity } from "../src/figma.mjs";
 
 /** The short summary of the results saved in a capture folder: the comparison if there is one, else the critique. */
 async function summaryOf(dir, opts) {
@@ -70,6 +71,8 @@ Commands
   assets     --in <capture dir> [--kind store,social] [--captions auto|file.json] [--product name]
                                                     store screenshots (Play 1080x1920, App Store 1290x2796) and
                                                     social cards (1200x630) rendered from the captures
+  fidelity   --in <capture dir> [--file <key|link>]  check the build against its Figma frames: the design's own values
+             [--no-judge]                            against the rendered ones, and each frame beside the screen
   lint       --in <capture dir> [--fail-on lint]     design-system lint from the computed styles (free): token drift,
                                                     off-palette colours, spacing off the grid, type, radius and shadow sprawl
   report     --in <capture dir>                      render critique.html and compare.html again from saved results (free)
@@ -154,6 +157,7 @@ const OPTIONS = {
   "no-judge": { type: "boolean" },
   name: { type: "string" },
   kind: { type: "string" },
+  file: { type: "string" },
   captions: { type: "string" },
   product: { type: "string" },
   help: { type: "boolean", short: "h" },
@@ -339,6 +343,13 @@ async function main() {
       const captions = flags.captions && !auto ? JSON.parse(await readFile(flags.captions, "utf8")) : {};
       const result = await renderAssets({ dir: flags.in, config, kinds, captions, auto, product: flags.product });
       emit(config, [`assets written to ${result.dir}:`, ...result.files.map((f) => `  ${path.relative(result.dir, f.file)} (${f.width}x${f.height})`), `background ${result.colors.bg}, captions in ${result.colors.ink}`].join("\n"), { command: "assets", dir: result.dir, colors: result.colors, captions: result.captions, files: result.files });
+      return;
+    }
+    case "fidelity": {
+      if (!flags.in) throw new Error("fidelity needs --in <capture dir>");
+      const result = await fidelity({ dir: flags.in, config, key: flags.file, judge: !flags["no-judge"] });
+      const counts = result.pages.map((p) => `${p.route}@${p.viewport}: ${p.judgement?.standing ?? "measured"}`);
+      emit(config, [`fidelity against ${result.fileName ?? result.figmaFile}`, ...counts.map((c) => `  ${c}`), `written to ${result.mdPath} and ${result.htmlPath}`].join("\n"), { command: "fidelity", pages: result.pages.map((p) => ({ route: p.route, viewport: p.viewport, frame: p.frame.name, standing: p.judgement?.standing ?? null, differences: p.judgement?.differences?.length ?? 0 })), unmatchedScreens: result.unmatchedScreens, unusedFrames: result.unusedFrames, htmlPath: result.htmlPath });
       return;
     }
     case "benchmark": {

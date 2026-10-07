@@ -1,3 +1,4 @@
+import { realpathSync } from "node:fs";
 import path from "node:path";
 import { auditSummary } from "./audit.mjs";
 import { routeSlug } from "./capture.mjs";
@@ -14,10 +15,24 @@ import { routeSlug } from "./capture.mjs";
 export const esc = (value) =>
   String(value ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 
-/** A path from the report's folder to an image, with forward slashes for a browser. */
+/**
+ * A path from the report's folder to an image, with forward slashes for a browser.
+ * Both sides are resolved through the real path first, because on Windows a capture
+ * recorded from a short 8.3 directory ("ELIJAH~1.OGU") and a report rendered from
+ * the long one are the same folder but not the same string, and the picture would
+ * get a path climbing out to the drive root that no browser or server can follow.
+ */
 export function relativeSrc(from, file) {
   if (!file) return "";
-  return path.relative(from, path.resolve(file)).split(path.sep).join("/");
+  return path.relative(realPath(from), realPath(path.resolve(file))).split(path.sep).join("/");
+}
+
+function realPath(p) {
+  try {
+    return realpathSync.native(p);
+  } catch {
+    return path.resolve(p);
+  }
 }
 
 /** The file behind a region's image name for a shot: first, full, or frameN. */

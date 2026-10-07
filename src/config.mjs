@@ -210,6 +210,11 @@ export const DEFAULTS = {
   // Competitors to review beside the product, each mapping our routes to theirs:
   // [{ "name": "Jumia", "base": "https://www.jumia.com.ng", "routes": { "/": "/" } }]
   benchmarks: [],
+  // The design to check the build against: a Figma file key or share link, an
+  // optional map from route (or "route@viewport") to frame id when the frame names
+  // do not say which screen they are, and the scale the frames are rendered at.
+  // The token comes from FIGMA_TOKEN, never from this file.
+  figma: { file: undefined, frames: {}, scale: 2 },
   fromImages: undefined,
   json: false,
   failOn: undefined,
@@ -402,6 +407,14 @@ export function validate(cfg) {
         throw new Error(`benchmarks[${i}].routes must map your routes to theirs, such as { "/": "/" }`);
       }
     });
+  }
+  if (cfg.figma) {
+    if (cfg.figma.file !== undefined && (typeof cfg.figma.file !== "string" || !cfg.figma.file.trim())) throw new Error("figma.file must be a Figma file key or share link");
+    if (cfg.figma.frames !== undefined && (typeof cfg.figma.frames !== "object" || Array.isArray(cfg.figma.frames))) {
+      throw new Error('figma.frames must map a route to a frame id, such as { "/": "12:34" }');
+    }
+    if (cfg.figma.scale !== undefined && !(cfg.figma.scale >= 0.5 && cfg.figma.scale <= 4)) throw new Error("figma.scale must be between 0.5 and 4");
+    if (/^figd_|^figu_/.test(String(cfg.figma.file ?? ""))) throw new Error("figma.file looks like a token: the token belongs in FIGMA_TOKEN, never in the config");
   }
   if (cfg.lint) {
     if (!(Number.isInteger(cfg.lint.spacingBase) && cfg.lint.spacingBase > 0)) throw new Error("lint.spacingBase must be a positive integer of pixels");

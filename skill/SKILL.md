@@ -17,6 +17,8 @@ not see the code or the product decisions, only what you give it.
 - The CLI: `npx uicritic` or `npx @akins20/ui-critic` (or `npm i -g @akins20/ui-critic`, which installs the `ui-critic` and `uicritic` commands), or from a checkout `node <absolute path>/ui-critic/bin/ui-critic.mjs`. Never `npx ui-critic`: that unscoped name is a different package.
 - For capture: Playwright with Chromium in the project (`@playwright/test` counts). Without it,
   point `critique` at screenshots taken another way, described by a `manifest.json`.
+- `FIGMA_TOKEN` only if you will check the build against its design (`fidelity`): a
+  personal access token that can read the file. It is read, never written to.
 - A URL to review: production, a preview deployment, or the local dev server. For an
   Android app: an emulator or device with the app installed (adb is found in the SDK);
   for iOS: a booted Simulator on macOS (experimental). For anything else: a folder of
@@ -99,13 +101,20 @@ not see the code or the product decisions, only what you give it.
    measured`, which cannot flake on taste. To set CI up, the repository is a GitHub
    Action (`Akins20/ui-critic@<version>`, see the README's "In CI"): it comments on the
    pull request, uploads the HTML reports and gates on measured regressions.
-9. **Reuse the screens.** A review holds clean, current screenshots of every page, so
+9. **Check against the design.** When the work came from Figma, run `ui-critic
+   fidelity --in <dir> --file <key>` (token in `FIGMA_TOKEN`) as soon as there is a
+   capture, and use it during triage: "this does not match the design" is a fact and
+   outranks the critic's opinion about the same element. The drift list is free and
+   objective, so read it first. Treat "rendered but not in the design" with care,
+   because the frame may be partial or out of date and the report says when it looks
+   that way; ask the user rather than making the build match an old frame.
+10. **Reuse the screens.** A review holds clean, current screenshots of every page, so
    when the user needs store listing images or a link preview, `ui-critic assets --in
    <dir>` renders them at Play, App Store and Open Graph sizes rather than anyone
    opening a design tool. Offer it after a review of an app or a landing page; use
    `--captions auto` for a first draft and edit the wording, since the critic writes
    from the brief and cannot know a claim the screen does not show.
-10. **Report** in plain language: what changed, what was rejected and why, what the critic
+11. **Report** in plain language: what changed, what was rejected and why, what the critic
    still asks for, what is still open, the cost of the runs (`ui-critic cost` totals the
    ledger per run at built-in prices; the usage line of each report names the price it
    used), with the scores as context rather than the goal.
