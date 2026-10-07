@@ -132,6 +132,9 @@ export class GeminiClient {
       }
       const body = await res.json();
       this.cacheName = body.name;
+      // Remembered past close(), so a summary taken after the cache is deleted
+      // still says the run used one.
+      this.cacheUsed = true;
       this.cacheTokens = body.usageMetadata?.totalTokenCount ?? tokens;
       this.cacheCreatedAt = Date.now();
       return this.cacheName;
@@ -266,7 +269,7 @@ export class GeminiClient {
       cacheStorageUSD: costKnown ? storage : null,
       pricingKnown: Boolean(this.price),
       price: this.price ? describePrice(this.price) : null,
-      cache: this.cacheName
+      cache: this.cacheName || this.cacheUsed
         ? { used: true, tokens: this.cacheTokens ?? null }
         : { used: false, reason: this.cache.enabled ? (this.cacheSkipped ?? "not needed") : "disabled" },
       thinking: thinkingConfig(this.thinking) ?? null,

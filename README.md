@@ -206,6 +206,16 @@ answers travel with the next critique.
 
 ## What you get
 
+- `critique.html`: the report to read. Every finding is drawn as a numbered box on the
+  screenshot it is about (the critic marks the place, on the first screen, the full page
+  or a scroll frame), next to the list of findings; hovering one lights up the other,
+  and findings filter by severity, category, viewport and text. One self-contained file
+  beside the screenshots, light first with a dark toggle, so the folder can be zipped or
+  uploaded as a CI artifact. `ui-critic report --in <dir>` renders it again from saved
+  results at no cost, for example after an upgrade.
+- `compare.html`: each page or screen before and after, side by side and under a slider,
+  with improved, confirmed regressions (tagged measured or judged), unconfirmed ones and
+  what is still open.
 - `critique.md` / `critique.json`: a score per page and for the site, strengths, ranked
   findings with evidence and a specific recommendation each, the measured facts and
   discipline coverage per page, a revamp-or-polish verdict, the five highest-leverage
@@ -232,6 +242,7 @@ triage instead of obeying.
 | `run --base url --label name` | capture then critique |
 | `verify --before dir --base url` | capture "after" then compare, in one step |
 | `cost [--out dir]` | total the usage ledger per run at today's prices |
+| `report --in dir` | render `critique.html` and `compare.html` again from saved results, with no calls |
 | `devices` | list connected Android devices and emulators, and booted iOS simulators |
 | `inspect [--serial id]` | list what is on an Android screen now, with a selector for each element |
 

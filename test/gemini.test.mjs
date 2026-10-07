@@ -44,6 +44,25 @@ test("summary totals calls and reports cache and thinking state", () => {
   assert.deepEqual(s.thinking, { thinkingLevel: "low" });
 });
 
+test("a cache deleted at the end of the run is still reported as used", async () => {
+  const client = new GeminiClient({ model: "m", cache: { enabled: true, keep: false }, pricing: { m: { input: 1, output: 2, storagePerHour: 1 } } });
+  // As ensureCache leaves it after a successful create.
+  client.cacheName = "cachedContents/abc";
+  client.cacheUsed = true;
+  client.cacheTokens = 5000;
+  client.cacheCreatedAt = Date.now() - 60_000;
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async () => ({ ok: true });
+  process.env.GEMINI_API_KEY ??= "test-key-not-real";
+  try {
+    await client.close();
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+  assert.equal(client.cacheName, null);
+  assert.deepEqual(client.summary().cache, { used: true, tokens: 5000 });
+});
+
 test("summary reports an unknown cost when pricing is missing", () => {
   const client = new GeminiClient({ model: "m", cache: { enabled: true } });
   client.calls.push({ promptTokens: 1, cachedTokens: 0, candidatesTokens: 1, thoughtsTokens: 0, totalTokens: 2, costUSD: null });

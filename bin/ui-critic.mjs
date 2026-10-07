@@ -17,6 +17,8 @@ import { createRunner, findAdb, parseDevices, pickDevice, androidDevice, deviceI
 import { parseHierarchy, foregroundPackage } from "../src/native/hierarchy.mjs";
 import { inspectScreen, renderInspect } from "../src/native/inspect.mjs";
 import { parseActivity } from "../src/native/android.mjs";
+import { rerender } from "../src/html.mjs";
+import { renderCritique } from "../src/report.mjs";
 
 const HELP = `ui-critic: a second pair of eyes on a UI, for coding agents and humans.
 
@@ -29,6 +31,7 @@ Commands
   run        --base <url> --label <name>             capture then critique, in one go
   verify     --before <dir> --base <url> [--label after]   capture "after" then compare
   cost       [--out <dir>]                           total the usage ledger per run at today's prices
+  report     --in <capture dir>                      render critique.html and compare.html again from saved results (free)
   devices                                            list connected Android devices and booted iOS simulators
   inspect    [--serial <id>]                         list what is on an Android screen now, with selectors
 
@@ -178,7 +181,7 @@ async function doCritique(config, dir) {
   emit(
     config,
     [
-      `critique written:\n  ${result.jsonPath}\n  ${result.mdPath}`,
+      `critique written:\n  ${result.htmlPath}\n  ${result.mdPath}\n  ${result.jsonPath}`,
       `score ${result.overall.score}/100, revamp needed: ${result.overall.revamp_needed}`,
       `verdict: ${result.overall.verdict}`,
       openRequests.length ? `the critic asks for ${openRequests.length} more thing(s); see the report` : "the critic asked for nothing more",
@@ -194,7 +197,7 @@ async function doCritique(config, dir) {
       requests: openRequests,
       followed: result.followed,
       usage: result.usage,
-      files: { json: result.jsonPath, md: result.mdPath },
+      files: { json: result.jsonPath, md: result.mdPath, html: result.htmlPath },
     },
   );
   return result;
@@ -205,7 +208,7 @@ async function doCompare(config, before, after) {
   emit(
     config,
     [
-      `comparison written:\n  ${result.jsonPath}\n  ${result.mdPath}`,
+      `comparison written:\n  ${result.htmlPath}\n  ${result.mdPath}\n  ${result.jsonPath}`,
       ...result.results.map((r) => `  ${r.viewport.padEnd(8)} ${r.route.padEnd(44)} ${r.verdict}`),
       usageLine(result.usage),
     ].join("\n"),
@@ -215,7 +218,7 @@ async function doCompare(config, before, after) {
       after,
       results: result.results.map((r) => ({ route: r.route, viewport: r.viewport, verdict: r.verdict, regressed: r.regressed.length, improved: r.improved.length })),
       usage: result.usage,
-      files: { json: result.jsonPath, md: result.mdPath },
+      files: { json: result.jsonPath, md: result.mdPath, html: result.htmlPath },
     },
   );
   gate(config, result.results);
@@ -244,6 +247,12 @@ async function main() {
         if (!lines.length) lines.push("no devices or simulators found");
         process.stdout.write([...lines, ...found.notes].join("\n") + "\n");
       }
+      return;
+    }
+    case "report": {
+      if (!flags.in) throw new Error("report needs --in <capture dir>");
+      const written = await rerender(flags.in, { renderCritique });
+      emit(config, `written:\n  ${written.join("\n  ")}`, { command: "report", files: written });
       return;
     }
     case "inspect": {

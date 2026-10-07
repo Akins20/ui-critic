@@ -4,6 +4,7 @@ import { imagePart, text } from "./parts.mjs";
 import { createClient } from "./provider.mjs";
 import { preamble, briefSection, disciplinesFor } from "./critique.mjs";
 import { allImages, nouns } from "./shots.mjs";
+import { renderCompareHTML } from "./html.mjs";
 import { renderCompare } from "./report.mjs";
 import { auditForPrompt } from "./audit.mjs";
 import { requireBrief, contextSections } from "./brief.mjs";
@@ -211,15 +212,17 @@ export async function compare({ before, after, config }) {
   const result = {
     tool: "ui-critic",
     model: config.model,
-    before: { label: mb.label, base: mb.base, capturedAt: mb.capturedAt },
-    after: { label: ma.label, base: ma.base, capturedAt: ma.capturedAt },
+    before: { label: mb.label, base: mb.base, capturedAt: mb.capturedAt, dir: path.resolve(before) },
+    after: { label: ma.label, base: ma.base, capturedAt: ma.capturedAt, dir: path.resolve(after) },
     comparedAt: new Date().toISOString(),
     results,
     usage: client.summary(),
   };
   const jsonPath = path.join(after, "compare.json");
   const mdPath = path.join(after, "compare.md");
+  const htmlPath = path.join(after, "compare.html");
   await writeFile(jsonPath, JSON.stringify(result, null, 2));
   await writeFile(mdPath, renderCompare(result));
-  return { ...result, jsonPath, mdPath };
+  await writeFile(htmlPath, renderCompareHTML(result, mb, ma, after));
+  return { ...result, jsonPath, mdPath, htmlPath };
 }

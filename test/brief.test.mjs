@@ -85,6 +85,9 @@ test("findings may name only the capture's own viewports, plus all when there ar
   const site = overallSchema(["phone"]);
   assert.deepEqual(site.properties.consistency_findings.items.properties.viewport.enum, ["phone"]);
   assert.ok(!JSON.stringify(page).includes('"both"'), "no fixed desktop/mobile pair left in the schema");
+  // Site findings must name a page that was captured, not invent a web path.
+  const routed = overallSchema(["phone"], "android", ["launch", "launch [shop]"]);
+  assert.deepEqual(routed.properties.consistency_findings.items.properties.page.enum, ["launch", "launch [shop]"]);
 });
 
 test("audit summary and prompt form are compact", () => {

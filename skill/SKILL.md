@@ -62,7 +62,8 @@ not see the code or the product decisions, only what you give it.
    `high` by default; `--include-thoughts` when you need to audit why a finding was made.
 4. **Run before.** `ui-critic run --base <url> --label before --follow-requests --json`.
    Same-origin pages the critic asks for are captured and reviewed in the same run. Read
-   `critique.md`, including the measured facts line per page and the usage line.
+   `critique.md`, including the measured facts line per page and the usage line. Point the
+   user at `critique.html` (findings boxed on the screenshots) when they want to see them.
 5. **Answer the critic.** Anything left under "Critic's requests" (files, answers,
    measurements, pages elsewhere) is yours to fulfil: write answers in
    `ui-critic/answers.md`, add files to `context.files`, add pages to `routes`, and rerun

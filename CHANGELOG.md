@@ -24,6 +24,15 @@
 - The critic is told what it is looking at: an app is judged against Material or the
   Human Interface Guidelines, with app wording (screens, not pages) throughout.
 - WebP screenshots are accepted.
+- `critique.html`: every finding drawn as a numbered box on the screenshot it is about,
+  linked to the list, filterable by severity, category, viewport and text; light first
+  with a dark toggle, one file beside the screenshots. The critic now marks a region per
+  finding (viewport, image, box), and site-level findings must name a captured page.
+- `compare.html`: before and after side by side and under a slider, with confirmed
+  regressions tagged measured or judged.
+- `ui-critic report --in <dir>` renders the HTML and Markdown again from saved results.
+- A compare's usage line said "no cache" for runs that used one (the summary was read
+  after the cache was deleted).
 - A `viewports` map in the config replaces the built-in desktop and mobile pair instead of
   merging with it. A phone-only review that named one viewport still captured, and paid to
   critique, a desktop pass of every page.

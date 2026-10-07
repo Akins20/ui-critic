@@ -11,6 +11,7 @@ import { readEnvFile } from "./steps.mjs";
 import { runPool, serialWriter } from "./pool.mjs";
 import { nouns, isNative, detailImages } from "./shots.mjs";
 import { DEFAULT_DISCIPLINES, NATIVE_DISCIPLINES } from "./config.mjs";
+import { renderCritiqueHTML } from "./html.mjs";
 
 /**
  * The critic's standing instructions. The disciplines list is spelled out so the
@@ -97,10 +98,57 @@ export function manifestViewports(manifest) {
   return named.length ? named : Array.from(new Set((manifest?.shots ?? []).map((s) => s.viewport)));
 }
 
-const findingSchema = (viewports) => ({
+/**
+ * The images a finding can point at: "first" (the first-screen capture), "full"
+ * (a web page's full-page capture), or "frame2" and on (an app screen's scroll
+ * frames), as many as the capture has.
+ */
+export function imageChoices(manifest) {
+  const most = Math.max(1, ...(manifest?.shots ?? []).map((s) => (Array.isArray(s.frames) ? s.frames.length : 1)));
+  const hasFull = (manifest?.shots ?? []).some((s) => s.full && !s.frames);
+  const out = ["first"];
+  if (hasFull) out.push("full");
+  for (let i = 2; i <= most; i += 1) out.push(`frame${i}`);
+  return out;
+}
+
+/**
+ * A finding's region as the report can use it: a known viewport and image and a box
+ * of four numbers from 0 to 1000 with its corners in order, or no box at all. The
+ * schema cannot say "four numbers in range", so the check is here.
+ */
+export function normalizeRegion(region, viewports, images) {
+  if (!region || typeof region !== "object") return null;
+  const viewport = viewports.includes(region.viewport) ? region.viewport : (viewports[0] ?? null);
+  const image = images.includes(region.image) ? region.image : "first";
+  const b = Array.isArray(region.box) ? region.box.map(Number) : [];
+  const ok = b.length === 4 && b.every((v) => Number.isFinite(v) && v >= 0 && v <= 1000) && b[2] > b[0] && b[3] > b[1];
+  return { viewport, image, box: ok ? b : null };
+}
+
+const regionSchema = (viewports, images) => ({
+  type: "OBJECT",
+  description: "where a reader should look: the viewport and image the finding is clearest on, and a box around it",
+  properties: {
+    viewport: { type: "STRING", enum: Array.from(new Set(viewports.filter(Boolean))).length ? Array.from(new Set(viewports.filter(Boolean))) : ["default"] },
+    image: { type: "STRING", enum: images, description: "first is the first-screen capture, full the full-page capture, frame2 and on the scroll frames" },
+    box: {
+      type: "ARRAY",
+      items: { type: "INTEGER" },
+      description: "[ymin, xmin, ymax, xmax] around the element on that image, each from 0 to 1000; empty when the finding is not in one place",
+    },
+  },
+  required: ["viewport", "image", "box"],
+});
+
+const findingSchema = (viewports, images = ["first"], routes = null) => ({
   type: "OBJECT",
   properties: {
-    page: { type: "STRING", description: "route of the page, e.g. / or /shop" },
+    // The page as the screenshot labels name it. Where the routes are known the
+    // choice is closed, so a finding cannot point at a page that was never captured.
+    page: routes?.length
+      ? { type: "STRING", enum: routes, description: "the page or screen, exactly as the screenshot labels name it" }
+      : { type: "STRING", description: "the page or screen, exactly as the screenshot labels name it" },
     viewport: {
       type: "STRING",
       enum: viewportChoices(viewports),
@@ -133,8 +181,9 @@ const findingSchema = (viewports) => ({
       type: "STRING",
       description: "the settled decision this finding would reopen, quoted from the settled decisions list, or an empty string when it reopens none",
     },
+    region: regionSchema(viewports, images),
   },
-  required: ["page", "viewport", "severity", "category", "observation", "evidence", "recommendation", "effort", "defect_kind", "conflicts_with_decision"],
+  required: ["page", "viewport", "severity", "category", "observation", "evidence", "recommendation", "effort", "defect_kind", "conflicts_with_decision", "region"],
 });
 
 const COVERAGE = {
@@ -162,29 +211,30 @@ const requestSchema = (platform) => ({
   required: ["kind", "target", "why"],
 });
 
-/** The schema of one page review, for a capture with the given viewport names. */
-export const pageSchema = (viewports, platform = "web") => ({
+/** The schema of one page review, for a capture with the given viewport names and images. */
+export const pageSchema = (viewports, platform = "web", images = ["first", "full"]) => ({
   type: "OBJECT",
   properties: {
     page: { type: "STRING" },
     summary: { type: "STRING", description: `two sentences on how this ${nouns(platform).item} performs for its job` },
     score: { type: "INTEGER" },
     strengths: { type: "ARRAY", items: { type: "STRING" } },
-    findings: { type: "ARRAY", items: findingSchema(viewports) },
+    findings: { type: "ARRAY", items: findingSchema(viewports, images) },
     coverage: { type: "ARRAY", items: COVERAGE, description: "one entry per design discipline in the list, in order" },
     requests: { type: "ARRAY", items: requestSchema(platform), description: `what else you need to judge this ${nouns(platform).item} better; empty if nothing` },
   },
   required: ["page", "summary", "score", "strengths", "findings", "coverage", "requests"],
 });
 
-/** The schema of the site-level review, for a capture with the given viewport names. */
-export const overallSchema = (viewports, platform = "web") => ({
+/** The schema of the site-level review, for a capture with the given viewport names and routes. */
+export const overallSchema = (viewports, platform = "web", routes = null) => ({
   type: "OBJECT",
   properties: {
     verdict: { type: "STRING", description: "three sentences: what works, what does not, what to do" },
     score: { type: "INTEGER" },
     revamp_needed: { type: "BOOLEAN", description: "true only if targeted fixes cannot get this UI to competitive" },
-    consistency_findings: { type: "ARRAY", items: findingSchema(viewports) },
+    // The site pass sees first screens only, so its findings point at those.
+    consistency_findings: { type: "ARRAY", items: findingSchema(viewports, ["first"], routes) },
     top_priorities: {
       type: "ARRAY",
       items: { type: "STRING" },
@@ -297,14 +347,18 @@ export function pageTask(route, shots, platform = "web") {
     what =
       "You already have its above-the-fold capture per viewport; here is the full-page capture per viewport (the whole scroll) and the measured facts. Full-page captures omit bars fixed to the bottom of the viewport (a sticky buy bar, a tab bar): judge those from the first-screen capture, and never report them as covering the footer.";
   }
-  return `## Task\nReview ${subject} ("${s.title}")${state}${signedIn}. ${what} Name the ${item}'s real strengths first, then list findings, then account for every design discipline in coverage, then anything you still need in requests. Set page to "${route}".`;
+  return `## Task\nReview ${subject} ("${s.title}")${state}${signedIn}. ${what} Name the ${item}'s real strengths first, then list findings, then account for every design discipline in coverage, then anything you still need in requests. Set page to "${route}". ${REGION_RULE}`;
 }
+
+/** How the critic marks where a finding is, so the visual report can draw it. */
+const REGION_RULE =
+  "For every finding, set region to the viewport and image where it shows most clearly (first is the first-screen capture, full the full-page capture, frame2 and on the scroll frames) and a box [ymin, xmin, ymax, xmax] from 0 to 1000 tightly around the element on that image, or an empty box when it is not in one place.";
 
 /** The task for the whole-site (or whole-app) pass. */
 export function siteTask(platform = "web", seen = "", launchErrors = []) {
   const { item, items, whole } = nouns(platform);
   const launch = launchErrors.length ? ` Errors the app logs on every plain launch (report them once here if they matter, never per ${item}): ${launchErrors.join(" | ")}.` : "";
-  return `## Task\nUsing the first screen of every ${item} at every viewport, judge the whole ${whole}: consistency of type scale, spacing rhythm, components and tone across ${items}; whether a redesign is warranted or targeted fixes suffice (revamp_needed); and the five changes with the highest impact for the least effort across the ${whole}. Keep consistency_findings to genuine cross-${item} patterns (at most six) and do not repeat per-${item} findings. List anything you still need in requests.${launch} Per-${item} findings already recorded: ${seen}`;
+  return `## Task\nUsing the first screen of every ${item} at every viewport, judge the whole ${whole}: consistency of type scale, spacing rhythm, components and tone across ${items}; whether a redesign is warranted or targeted fixes suffice (revamp_needed); and the five changes with the highest impact for the least effort across the ${whole}. Keep consistency_findings to genuine cross-${item} patterns (at most six) and do not repeat per-${item} findings. Set each finding's page to the one ${item} that shows the pattern best and its region on that ${item}'s first screen (image first), with an empty box when no single place shows it. List anything you still need in requests.${launch} Per-${item} findings already recorded: ${seen}`;
 }
 
 async function readAudit(shot) {
@@ -372,8 +426,8 @@ export async function critique({ dir, config }) {
   }
   const cached = await client.ensureCache(prefix, `ui-critic ${manifest.label}`);
   const viewports = manifestViewports(manifest);
-  const PAGE = pageSchema(viewports, platform);
-  const OVERALL = overallSchema(viewports, platform);
+  const images = imageChoices(manifest);
+  const PAGE = pageSchema(viewports, platform, images);
   const thoughtLog = [];
   const done = await loadPartial(dir, manifest, config.model);
   const partialPath = path.join(dir, PARTIAL_FILE);
@@ -395,7 +449,7 @@ export async function critique({ dir, config }) {
     }
     const { data, thoughts } = await client.generateJSON({ parts, schema: PAGE, op: `page:${route}` });
     const slug = routeSlug(route);
-    const all = (data.findings ?? []).map((f, i) => ({ id: `${slug}-${i + 1}`, ...f, page: route }));
+    const all = (data.findings ?? []).map((f, i) => ({ id: `${slug}-${i + 1}`, ...f, page: route, region: normalizeRegion(f.region, viewports, images) }));
     const { kept, withheld } = withholdSettled(all);
     data.findings = kept;
     data.requests = data.requests ?? [];
@@ -459,9 +513,11 @@ export async function critique({ dir, config }) {
     let overall;
     let siteError = null;
     try {
+      // Routes are read now, so pages the critic asked for and the tool followed count too.
+      const OVERALL = overallSchema(viewports, platform, pages.map((p) => p.route));
       const site = await client.generateJSON({ parts, schema: OVERALL, op: "site" });
       overall = site.data;
-      const siteSplit = withholdSettled((overall.consistency_findings ?? []).map((f, i) => ({ id: `site-${i + 1}`, ...f })));
+      const siteSplit = withholdSettled((overall.consistency_findings ?? []).map((f, i) => ({ id: `site-${i + 1}`, ...f, region: normalizeRegion(f.region, viewports, ["first"]) })));
       overall.consistency_findings = siteSplit.kept;
       overall.withheld = siteSplit.withheld;
       overall.requests = overall.requests ?? [];
@@ -498,11 +554,13 @@ export async function critique({ dir, config }) {
     };
     const jsonPath = path.join(dir, "critique.json");
     const mdPath = path.join(dir, "critique.md");
+    const htmlPath = path.join(dir, "critique.html");
     await writeFile(jsonPath, JSON.stringify(result, null, 2));
     await writeFile(mdPath, renderCritique(result));
+    await writeFile(htmlPath, renderCritiqueHTML(result, manifest, dir));
     if (thoughtLog.length) await writeFile(path.join(dir, "thoughts.md"), thoughtLog.join("\n\n") + "\n");
     if (siteError) throw new Error(`site pass failed: ${siteError} (per-page results were written to ${jsonPath}; rerun to retry the site pass)`);
-    return { ...result, jsonPath, mdPath };
+    return { ...result, jsonPath, mdPath, htmlPath };
   } finally {
     await client.close();
   }
