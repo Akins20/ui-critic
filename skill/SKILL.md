@@ -41,6 +41,19 @@ not see the code or the product decisions, only what you give it.
 - Touch-target sizes are element bounds; React Native `hitSlop` or a `TouchDelegate`
   enlarges the real touch area invisibly. Check the code before resizing a visual.
 
+## Components (Storybook)
+
+- When the work is a component rather than a page, review it where it lives:
+  `ui-critic run --storybook http://localhost:6006 --label before` turns the stories
+  into routes, each rendered alone. Run `ui-critic stories --storybook <url>` first to
+  see how many there are, and tell the user the count before a large run.
+- One story per component by default. Use `--stories Button,Card` when the work is on
+  named components, which is the usual case during a change, and keep `--all-stories`
+  for a full sweep the user has asked for.
+- Component findings are about the component: contrast, target size, hover and focus
+  feedback, and its fit with the design system. A finding about page layout or
+  hierarchy belongs to a page review, not a story.
+
 ## The loop
 1. **Bootstrap.** `ui-critic init --base <url>` writes `ui-critic.config.json` (every default
    spelled out), `ui-critic/brief.md` and `ui-critic/decisions.md`. Keep the output directory

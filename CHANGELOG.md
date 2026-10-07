@@ -86,6 +86,16 @@
   desktop, mobile or both, so a review of a phone and a tablet labelled tablet findings as
   desktop or mobile. A finding that applies everywhere now says `all` (it said `both`).
 - An empty `viewports` map is rejected with a clear message instead of capturing nothing.
+- Storybook (`--storybook <url>`): the stories of a running Storybook become the
+  routes, so components are reviewed in isolation with everything the tool already
+  does (measured facts, the lint, the hover and keyboard sweep, the critic, compare).
+  Each story renders alone at `/iframe.html` and is named by its own title in the
+  reports and its screenshot. The index is read from `index.json`, or `stories.json`
+  on Storybook 6; docs pages are left out. One story per component by default,
+  `--stories` to name components, `--all-stories` for every one, with a cap that
+  reports what it left out. `ui-critic stories` lists them without capturing.
+- A route can carry a name of its own, used in every report and in the screenshot's
+  file name instead of the URL.
 - Fidelity against the design (`ui-critic fidelity`): the Figma frames a screen was
   built from, read over the REST API with a token from `FIGMA_TOKEN`. Two checks at
   once: the frame's own values (fills, font sizes, radii, auto-layout spacing,

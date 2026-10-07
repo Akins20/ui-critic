@@ -79,6 +79,7 @@ Commands
   summary    --in <capture dir> [--fail-on x]        a short Markdown summary for a pull request or a CI job
   comment    --in <capture dir> [--pr N]             post that summary on the pull request, or update the earlier one
                                                     (GITHUB_TOKEN, GITHUB_REPOSITORY; the number comes from the event)
+  stories    --storybook <url>                       list the stories a running Storybook can render
   devices                                            list connected Android devices and booted iOS simulators
   inspect    [--serial <id>]                         list what is on an Android screen now, with selectors
 
@@ -158,6 +159,9 @@ const OPTIONS = {
   name: { type: "string" },
   kind: { type: "string" },
   file: { type: "string" },
+  storybook: { type: "string" },
+  stories: { type: "string" },
+  "all-stories": { type: "boolean" },
   captions: { type: "string" },
   product: { type: "string" },
   help: { type: "boolean", short: "h" },
@@ -194,8 +198,25 @@ async function doCapture(config, label) {
   if (config.fromImages) return captureFromImages({ from: config.fromImages, out: config.out, label });
   if (config.platform === "android") return captureAndroid({ ...config, label });
   if (config.platform === "ios") return captureIOS({ ...config, label });
-  if (!config.base) throw new Error("capture needs --base <url> (or base in the config file)");
-  return capture({ ...config, label });
+  const book = await storybookConfig(config);
+  if (!book.base) throw new Error("capture needs --base <url> (or base in the config file)");
+  return capture({ ...book, label });
+}
+
+/**
+ * A Storybook's stories as the routes to capture. The index is read from the running
+ * Storybook, so the review follows whatever is in it today rather than a list anyone
+ * has to keep up to date.
+ */
+async function storybookConfig(config) {
+  const url = config.storybook?.url;
+  if (!url) return config;
+  const { fetchStories, storyRoutes } = await import("../src/storybook.mjs");
+  const { stories } = await fetchStories(url);
+  const picked = storyRoutes(stories, config.storybook);
+  if (!picked.routes.length) throw new Error(`the Storybook at ${url} has ${stories.length} stories but none matched; check storybook.include and storybook.exclude`);
+  process.stderr.write(`  ${picked.routes.length} of ${stories.length} stories${picked.dropped ? `, ${picked.dropped} over storybook.limit not taken` : ""}\n`);
+  return { ...config, base: url, routes: picked.routes, scenarios: [], storybookStories: picked.stories };
 }
 
 /** What a capture produced, in words: screenshots of pages, or screens of an app. */
@@ -343,6 +364,19 @@ async function main() {
       const captions = flags.captions && !auto ? JSON.parse(await readFile(flags.captions, "utf8")) : {};
       const result = await renderAssets({ dir: flags.in, config, kinds, captions, auto, product: flags.product });
       emit(config, [`assets written to ${result.dir}:`, ...result.files.map((f) => `  ${path.relative(result.dir, f.file)} (${f.width}x${f.height})`), `background ${result.colors.bg}, captions in ${result.colors.ink}`].join("\n"), { command: "assets", dir: result.dir, colors: result.colors, captions: result.captions, files: result.files });
+      return;
+    }
+    case "stories": {
+      if (!config.storybook?.url) throw new Error("stories needs --storybook <url> of a running Storybook");
+      const { fetchStories, storyRoutes } = await import("../src/storybook.mjs");
+      const { url, stories } = await fetchStories(config.storybook.url);
+      const picked = storyRoutes(stories, config.storybook);
+      const chosen = new Set(picked.stories.map((s) => s.id));
+      emit(
+        config,
+        [`${stories.length} stories in ${url}, ${picked.stories.length} would be captured:`, ...stories.map((s) => `  ${chosen.has(s.id) ? "*" : " "} ${s.title}/${s.name}  ${s.id}`)].join("\n"),
+        { command: "stories", index: url, stories, chosen: picked.stories, dropped: picked.dropped },
+      );
       return;
     }
     case "fidelity": {

@@ -230,7 +230,7 @@ async function shoot({ page, dir, slug, viewportName, route, label, extra = {}, 
  * full-page JPEG and the measured audit. Shared by the initial capture and by the
  * follow-up capture of pages the critic asks for.
  */
-export async function captureRoute({ page, base, route, viewportName, dir, hideSelectors, auth = false, sweep = null }) {
+export async function captureRoute({ page, base, route, name = null, viewportName, dir, hideSelectors, auth = false, sweep = null }) {
   const runtime = await instrumentPage(page);
   runtime.reset();
   const url = new URL(route, base).toString();
@@ -240,7 +240,10 @@ export async function captureRoute({ page, base, route, viewportName, dir, hideS
     await page.goto(url, { waitUntil: "load", timeout: 90_000 });
   }
   await settle(page, hideSelectors);
-  return shoot({ page, dir, slug: routeSlug(route), viewportName, route, label: route, extra: { auth }, runtime, sweep });
+  // A route can carry a name of its own (a Storybook story is "Forms/Button/Primary",
+  // not "/iframe.html?id=forms-button--primary"), which names it in every report and
+  // in the screenshot's file name; the URL stays on the shot as its path.
+  return shoot({ page, dir, slug: routeSlug(name ?? route), viewportName, route, label: name ?? route, extra: { auth }, runtime, sweep });
 }
 
 /**
@@ -427,8 +430,8 @@ export async function capture({ base, routes, scenarios = [], auth = null, viewp
       const anon = await openContext(browser, vp);
       const page = await newPageFor(anon, vp);
       for (const entry of entries.filter((e) => !e.auth)) {
-        shots.push(await captureRoute({ page, base, route: entry.path, viewportName, dir, hideSelectors, sweep: sweepFor(sweep, vp) }));
-        process.stderr.write(`  ${viewportName.padEnd(8)} ${entry.path}\n`);
+        shots.push(await captureRoute({ page, base, route: entry.path, name: entry.label, viewportName, dir, hideSelectors, sweep: sweepFor(sweep, vp) }));
+        process.stderr.write(`  ${viewportName.padEnd(8)} ${entry.label ?? entry.path}\n`);
       }
       await anon.close();
       // Every scenario starts from a clean context, so a saved wishlist, a
@@ -453,7 +456,7 @@ export async function capture({ base, routes, scenarios = [], auth = null, viewp
           const session = await context.storageState();
           const authPage = await newPageFor(context, vp);
           for (const entry of authEntries) {
-            shots.push(await captureRoute({ page: authPage, base, route: entry.path, viewportName, dir, hideSelectors, auth: true, sweep: sweepFor(sweep, vp) }));
+            shots.push(await captureRoute({ page: authPage, base, route: entry.path, name: entry.label, viewportName, dir, hideSelectors, auth: true, sweep: sweepFor(sweep, vp) }));
             process.stderr.write(`  ${viewportName.padEnd(8)} ${entry.path} (signed in)\n`);
           }
           await context.close();

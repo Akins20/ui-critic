@@ -249,6 +249,7 @@ triage instead of obeying.
 | `lint --in dir` | design-system lint from the computed styles: token drift, palette, type, spacing, radius, shadow (free) |
 | `assets --in dir [--kind store\|social]` | store screenshots and social cards rendered from the screens already captured |
 | `fidelity --in dir [--file key]` | the build against its Figma frames: the design's own values against the rendered ones, each frame beside its screen |
+| `stories --storybook url` | list the stories a running Storybook can render, and which would be captured |
 | `report --in dir` | render `critique.html` and `compare.html` again from saved results, with no calls |
 | `summary --in dir` | a short Markdown summary for a pull request or a CI job |
 | `comment --in dir [--pr N]` | post that summary on the pull request, or update the earlier one |
@@ -378,6 +379,32 @@ and the fix; the report ends with proposed scales (a palette, a fitted modular t
 scale, spacing and radii). Tokens beyond the page's own custom properties can come
 from `lint.tokens` (a flat map or W3C design tokens). `--fail-on lint` exits 2 on a
 high-severity finding, for CI.
+
+## Storybook: review the components, not only the pages
+
+Point the tool at a running Storybook and the stories become the routes:
+
+```bash
+ui-critic run --storybook http://localhost:6006 --label before
+```
+
+Every story renders alone at `/iframe.html`, without the Storybook chrome, so what
+is measured and judged is the component and nothing else: its contrast, its target
+sizes, its hover and keyboard feedback, its place in the design system. A story is
+named in the reports and in its screenshot by its own title ("Forms/Button/Primary"),
+not by the iframe URL that renders it.
+
+The index is read from the Storybook itself (`index.json`, or `stories.json` on
+Storybook 6), so the review follows whatever is in it today. Documentation pages are
+left out, being prose rather than components. By default one story per component is
+taken, usually the default one, because a hundred variants of a button is a large
+bill for little more than the first tells you. `--stories Button,Card` takes every
+story of the components you name, `--all-stories` takes all of them, and
+`storybook.exclude` drops a folder. `storybook.limit` caps the run at 40 stories and
+the report says how many were left out.
+
+`ui-critic stories --storybook <url>` lists what it found and marks which would be
+captured, so you can see the bill before paying it.
 
 ## Fidelity: the build against the design
 

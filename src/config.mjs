@@ -215,6 +215,11 @@ export const DEFAULTS = {
   // do not say which screen they are, and the scale the frames are rendered at.
   // The token comes from FIGMA_TOKEN, never from this file.
   figma: { file: undefined, frames: {}, scale: 2 },
+  // Review the components instead of the pages: the stories of a running Storybook
+  // become the routes. Without `include`, one story per component is taken; `all`
+  // takes every one. `include` and `exclude` are plain text matched against
+  // "Title/Name" and the story id.
+  storybook: { url: undefined, include: [], exclude: [], all: false, limit: 40 },
   fromImages: undefined,
   json: false,
   failOn: undefined,
@@ -278,6 +283,9 @@ export function flagOverrides(flags, env = process.env) {
         return fixed;
       });
   }
+  if (flags.storybook) o.storybook = { url: flags.storybook };
+  if (flags.stories) o.storybook = { ...(o.storybook ?? {}), include: flags.stories.split(",").map((s) => s.trim()).filter(Boolean) };
+  if (flags["all-stories"]) o.storybook = { ...(o.storybook ?? {}), all: true };
   if (flags.out) o.out = flags.out;
   if (flags.model) o.model = flags.model;
   if (flags.brief) o.brief = flags.brief;
@@ -415,6 +423,13 @@ export function validate(cfg) {
     }
     if (cfg.figma.scale !== undefined && !(cfg.figma.scale >= 0.5 && cfg.figma.scale <= 4)) throw new Error("figma.scale must be between 0.5 and 4");
     if (/^figd_|^figu_/.test(String(cfg.figma.file ?? ""))) throw new Error("figma.file looks like a token: the token belongs in FIGMA_TOKEN, never in the config");
+  }
+  if (cfg.storybook?.url !== undefined) {
+    if (typeof cfg.storybook.url !== "string" || !/^https?:\/\//i.test(cfg.storybook.url)) throw new Error("storybook.url must be an http(s) URL of a running Storybook");
+    for (const key of ["include", "exclude"]) {
+      if (cfg.storybook[key] !== undefined && !Array.isArray(cfg.storybook[key])) throw new Error(`storybook.${key} must be a list of text to match`);
+    }
+    if (cfg.storybook.limit !== undefined && !(Number.isInteger(cfg.storybook.limit) && cfg.storybook.limit > 0)) throw new Error("storybook.limit must be a positive whole number of stories");
   }
   if (cfg.lint) {
     if (!(Number.isInteger(cfg.lint.spacingBase) && cfg.lint.spacingBase > 0)) throw new Error("lint.spacingBase must be a positive integer of pixels");
