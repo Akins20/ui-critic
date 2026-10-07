@@ -447,7 +447,10 @@ export async function critique({ dir, config }) {
   if (extra) prefix.push(text(extra));
   const variants = variantNotes(manifest.viewports);
   if (variants) prefix.push(text(variants));
-  for (const s of manifest.shots) {
+  // A capture that met a bot check instead of the page is listed, never reviewed.
+  const reviewable = manifest.shots.filter((s) => !s.blocked);
+  const blockedNotes = manifest.shots.filter((s) => s.blocked).map((s) => `${s.route} at ${s.viewport} (${s.blocked})`);
+  for (const s of reviewable) {
     prefix.push(text(`Screenshot: ${s.route} at ${s.viewport}, ${fold} (${s.title})`), await imagePart(s.fold));
   }
   const cached = await client.ensureCache(prefix, `ui-critic ${manifest.label}`);
@@ -496,7 +499,7 @@ export async function critique({ dir, config }) {
   try {
     // Pages are reviewed a few at a time (config.concurrency); each finished page
     // is checkpointed as it lands, and results keep the manifest's order.
-    const entries = Array.from(groupByRoute(manifest.shots));
+    const entries = Array.from(groupByRoute(reviewable));
     const pages = await runPool(entries, concurrency, async ([route, shots]) => {
       if (done[route]) {
         process.stderr.write(`  reused ${route} from checkpoint: score ${done[route].score}, ${done[route].findings.length} findings\n`);
@@ -583,7 +586,7 @@ export async function critique({ dir, config }) {
       pages,
       requests,
       followed,
-      skipped: manifest.skipped ?? [],
+      skipped: [...(manifest.skipped ?? []), ...blockedNotes],
       decisions,
       ...(lint ? { lint } : {}),
       usage: client.summary(),

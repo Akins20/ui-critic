@@ -365,7 +365,8 @@ export function renderCompareHTML(result, before, after, dir) {
   const usage = result.usage ? ` &middot; ${result.usage.calls} calls, about $${result.usage.estimatedCostUSD?.toFixed?.(4) ?? "?"}` : "";
   parts.push(`<header class="top"><div><h1>UI comparison: ${esc(result.before.label)} vs ${esc(result.after.label)}</h1><p class="meta">${esc(result.after.base)} &middot; ${esc(result.model)} &middot; compared ${esc(result.comparedAt)}${usage}</p></div><button class="theme" type="button">Dark</button></header>`);
   const rows = result.results.map((r) => `<li><a href="#c-${esc(routeSlug(r.route))}-${esc(r.viewport)}">${esc(r.route)} at ${esc(r.viewport)}</a>: <span class="verdict v-${esc(r.verdict)}">${esc(r.verdict)}</span>${r.regressed?.length ? `, ${r.regressed.length} regressed` : ""}${r.improved?.length ? `, ${r.improved.length} improved` : ""}</li>`);
-  parts.push(`<section class="overall"><div></div><div><ul class="plain">${rows.join("")}</ul></div></section>`);
+  const skipped = (result.skipped ?? []).map((s) => `<li>${esc(s.route)} at ${esc(s.viewport)}: not compared, ${esc(s.reason)}</li>`);
+  parts.push(`<section class="overall"><div></div><div><ul class="plain">${rows.join("")}${skipped.join("")}</ul></div></section>`);
   result.results.forEach((r, i) => {
     const b = find(before, r);
     const a = find(after, r);

@@ -41,6 +41,13 @@
   annotation for each confirmed regression; `summary` and `comment` do the same anywhere.
 - The web capture is tested end to end in a real browser against a fixture site with
   planted defects, in CI on every change.
+- Benchmarks (`ui-critic benchmark`): competitors mapped route by route, captured at
+  your viewports and compared for your audience (ahead, level or behind; what to adopt
+  and how; what you do better; what not to copy), in benchmark.html.
+- A page that answers with a bot check is recognised during capture and never judged:
+  critiques list it under "Not captured", comparisons and benchmarks under "Not
+  compared". Found when a competitor served Cloudflare's check to the phone viewport.
+- critique and compare are now tested end to end against a simulated API.
 - Try-on (`ui-critic tryon`): lay CSS over the live pages of a capture and see each
   version beside the original in tryon.html, from a CSS file or from directions the
   critic drafts for a goal using the page's own custom properties. Each page gets the

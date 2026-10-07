@@ -156,7 +156,9 @@ export async function compare({ before, after, config }) {
   } catch {
     // no checkpoint
   }
-  const pending = pendingPairs(ma.shots, mb.shots, done);
+  // A pair where either side met a bot check cannot be compared; it is listed instead.
+  const blockedPairs = ma.shots.filter((s) => s.blocked || mb.shots.some((b) => b.route === s.route && b.viewport === s.viewport && b.blocked)).map((s) => ({ route: s.route, viewport: s.viewport, reason: s.blocked ?? mb.shots.find((b) => b.route === s.route && b.viewport === s.viewport)?.blocked }));
+  const pending = pendingPairs(ma.shots.filter((s) => !blockedPairs.some((p) => p.route === s.route && p.viewport === s.viewport)), mb.shots, done);
   if (done.length) process.stderr.write(`  resuming: ${done.length} pairs already compared, ${pending.length} to go
 `);
   const results = [...done];
@@ -218,6 +220,7 @@ export async function compare({ before, after, config }) {
     after: { label: ma.label, base: ma.base, capturedAt: ma.capturedAt, dir: path.resolve(after) },
     comparedAt: new Date().toISOString(),
     results,
+    ...(blockedPairs.length ? { skipped: blockedPairs } : {}),
     usage: client.summary(),
   };
   const jsonPath = path.join(after, "compare.json");

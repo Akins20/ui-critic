@@ -153,6 +153,21 @@ export async function instrumentPage(page) {
   return page.__uiCriticRuntime;
 }
 
+/** Page titles that bot-protection services show instead of the page. */
+const CHALLENGE_TITLE = /^(just a moment|attention required|access denied|security check|are you a robot|pardon our interruption|request blocked|one more step|ddos-guard)/i;
+/** Phrases only a challenge page says; a login page that merely uses reCAPTCHA does not. */
+const CHALLENGE_TEXT = /(verify(ing)? you are (a )?human|checking your browser before|enable javascript and cookies to continue|performing security verification)/i;
+
+/**
+ * Whether the browser was shown a bot check instead of the page, and why. A review
+ * of a challenge page is worthless, so such captures are kept but never judged.
+ */
+export function blockedReason(title, bodyText) {
+  if (CHALLENGE_TITLE.test(String(title ?? "").trim())) return `the site served a bot check ("${String(title).trim().slice(0, 60)}")`;
+  if (CHALLENGE_TEXT.test(String(bodyText ?? ""))) return "the site served a bot check (a human-verification page)";
+  return null;
+}
+
 /** Screenshots and audits the page as it is now, under the given slug and label. */
 async function shoot({ page, dir, slug, viewportName, route, label, extra = {}, runtime = null, sweep = null }) {
   const fold = path.join(dir, `${slug}.${viewportName}.fold.png`);
@@ -203,9 +218,11 @@ async function shoot({ page, dir, slug, viewportName, route, label, extra = {}, 
   }
   // Hover and keyboard focus, measured last: after the screenshots, the facts and the
   // runtime record, so moving the pointer and the focus cannot change any of them.
-  if (sweep) facts.interaction = await sweepPage(page, sweep);
+  const title = await page.title();
+  const blocked = blockedReason(title, await page.evaluate(() => (document.body?.innerText ?? "").slice(0, 3000)).catch(() => ""));
+  if (sweep && !blocked) facts.interaction = await sweepPage(page, sweep);
   await writeFile(audit, JSON.stringify(facts, null, 2));
-  return { route: label, path: route, url: page.url(), viewport: viewportName, title: await page.title(), fold, full, audit, styles, hiddenFixed, ...extra };
+  return { route: label, path: route, url: page.url(), viewport: viewportName, title, fold, full, audit, styles, hiddenFixed, ...(blocked ? { blocked } : {}), ...extra };
 }
 
 /**

@@ -245,6 +245,7 @@ triage instead of obeying.
 | `verify --before dir --base url` | capture "after" then compare, in one step |
 | `cost [--out dir]` | total the usage ledger per run at today's prices |
 | `tryon --in dir --css file` or `--goal text` | lay CSS over the live pages and compare with the original, or let the critic draft directions |
+| `benchmark --in dir [--name X]` | capture the competitors in `benchmarks` and compare them with your pages, page by page |
 | `lint --in dir` | design-system lint from the computed styles: token drift, palette, type, spacing, radius, shadow (free) |
 | `report --in dir` | render `critique.html` and `compare.html` again from saved results, with no calls |
 | `summary --in dir` | a short Markdown summary for a pull request or a CI job |
@@ -263,6 +264,25 @@ the second look.
 Calls run a few at a time (`concurrency`, default 3, `--concurrency N`,
 `UI_CRITIC_CONCURRENCY`); each finished page or pair is checkpointed as it lands and the
 report keeps the capture order.
+
+## Benchmarks
+
+The products your visitors compare you with can be reviewed beside yours, page by
+page. Map each of your routes to the competitor's equivalent:
+
+```json
+"benchmarks": [{ "name": "Jumia", "base": "https://www.jumia.com.ng", "routes": { "/": "/", "/shop": "/catalog/" } }]
+```
+
+`ui-critic benchmark --in <your capture>` captures their pages at your viewports and the
+critic compares each pair for your audience: whether you are ahead, level or behind,
+what they do better with exactly how to adopt it inside your brand and settled
+decisions, what you do better, and what on their page is not worth copying.
+`benchmark.html` shows the pages side by side with the comparison. Only public pages
+are loaded, as a visitor would. A page that answers with a bot check ("Just a moment",
+a human-verification page) is recognised and left uncompared rather than judged; take
+that screenshot yourself and use `--from-images`. The same check protects every capture:
+a page of your own that meets a bot check is listed under "Not captured", never reviewed.
 
 ## Try-on: see a change before you make it
 

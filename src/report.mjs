@@ -131,6 +131,10 @@ export function renderCompare(result) {
   lines.push(`Before: ${result.before.base} (${result.before.capturedAt})`);
   lines.push(`After: ${result.after.base} (${result.after.capturedAt})`);
   lines.push(usageLine(result.usage));
+  if (result.skipped?.length) {
+    lines.push("", "### Not compared");
+    for (const s of result.skipped) lines.push(`- ${s.route} at ${s.viewport}: ${s.reason}`);
+  }
   for (const r of result.results) {
     lines.push("");
     lines.push(`## ${r.route} at ${r.viewport}: ${r.verdict}`);

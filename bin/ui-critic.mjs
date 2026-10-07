@@ -24,6 +24,7 @@ import { upsertComment, pullRequestNumber } from "../src/github.mjs";
 import { appendFile, readFile, writeFile } from "node:fs/promises";
 import { lintCapture, renderLint } from "../src/lint.mjs";
 import { tryon } from "../src/tryon.mjs";
+import { benchmark } from "../src/benchmark.mjs";
 
 /** The short summary of the results saved in a capture folder: the comparison if there is one, else the critique. */
 async function summaryOf(dir, opts) {
@@ -64,6 +65,7 @@ Commands
   tryon      --in <capture dir> --css <file>         lay CSS over the live pages, capture and compare with the original
              --in <capture dir> --goal <text> [--variants 3]   let the critic draft directions as CSS and try each on
              [--routes /,/shop] [--no-judge]          (no-judge renders without asking the critic for verdicts)
+  benchmark  --in <capture dir> [--name Jumia]       capture the competitors in "benchmarks" and compare page by page
   lint       --in <capture dir> [--fail-on lint]     design-system lint from the computed styles (free): token drift,
                                                     off-palette colours, spacing off the grid, type, radius and shadow sprawl
   report     --in <capture dir>                      render critique.html and compare.html again from saved results (free)
@@ -146,6 +148,7 @@ const OPTIONS = {
   goal: { type: "string" },
   variants: { type: "string" },
   "no-judge": { type: "boolean" },
+  name: { type: "string" },
   help: { type: "boolean", short: "h" },
 };
 
@@ -320,6 +323,17 @@ async function main() {
           files: { html: result.htmlPath, json: result.jsonPath },
         },
       );
+      return;
+    }
+    case "benchmark": {
+      if (!flags.in) throw new Error("benchmark needs --in <capture dir> and benchmarks in the config");
+      const result = await benchmark({ dir: flags.in, config, only: flags.name, judge: !flags["no-judge"] });
+      const lines = result.benchmarks.flatMap((b) => (b.error ? [`  ${b.name}: ${b.error}`] : b.pages.map((p) => `  ${b.name}: ${p.route} vs ${p.theirRoute} at ${p.viewport}: ${p.judgement?.standing ?? (p.error ? `not compared (${p.error.slice(0, 80)})` : "captured")}`)));
+      emit(config, [`benchmarks written:\n  ${result.htmlPath}\n  ${result.jsonPath}`, ...lines].join("\n"), {
+        command: "benchmark",
+        benchmarks: result.benchmarks.map((b) => ({ name: b.name, error: b.error ?? null, pages: (b.pages ?? []).map((p) => ({ route: p.route, theirRoute: p.theirRoute, viewport: p.viewport, standing: p.judgement?.standing ?? null })) })),
+        files: { html: result.htmlPath, json: result.jsonPath },
+      });
       return;
     }
     case "lint": {

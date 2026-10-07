@@ -207,6 +207,9 @@ export const DEFAULTS = {
   // Add the accessibility variants (reflow, zoom, text spacing, forced colours, a
   // colour-vision simulation, dark) beside the configured viewports; --a11y.
   a11y: false,
+  // Competitors to review beside the product, each mapping our routes to theirs:
+  // [{ "name": "Jumia", "base": "https://www.jumia.com.ng", "routes": { "/": "/" } }]
+  benchmarks: [],
   fromImages: undefined,
   json: false,
   failOn: undefined,
@@ -389,6 +392,16 @@ export function validate(cfg) {
   }
   if (!(Number.isInteger(cfg.followRequests.maxPages) && cfg.followRequests.maxPages >= 0)) {
     throw new Error("followRequests.maxPages must be a non-negative integer");
+  }
+  if (cfg.benchmarks !== undefined) {
+    if (!Array.isArray(cfg.benchmarks)) throw new Error("benchmarks must be a list");
+    cfg.benchmarks.forEach((b, i) => {
+      if (!b || typeof b.name !== "string" || !b.name.trim()) throw new Error(`benchmarks[${i}] needs a name`);
+      if (typeof b.base !== "string" || !/^https?:\/\//i.test(b.base)) throw new Error(`benchmarks[${i}].base must be an http(s) URL`);
+      if (!b.routes || typeof b.routes !== "object" || Array.isArray(b.routes) || !Object.keys(b.routes).length) {
+        throw new Error(`benchmarks[${i}].routes must map your routes to theirs, such as { "/": "/" }`);
+      }
+    });
   }
   if (cfg.lint) {
     if (!(Number.isInteger(cfg.lint.spacingBase) && cfg.lint.spacingBase > 0)) throw new Error("lint.spacingBase must be a positive integer of pixels");

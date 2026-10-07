@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 import { capture, loadPlaywright } from "../src/capture.mjs";
 import { lintCapture } from "../src/lint.mjs";
 import { tryon } from "../src/tryon.mjs";
+import { benchmark } from "../src/benchmark.mjs";
 import { DEFAULTS } from "../src/config.mjs";
 
 /**
@@ -170,6 +171,23 @@ test("a try-on lays CSS over the live page, re-captures it beside the original a
   assert.ok(!(await readFile(tried.shots[0].fold)).equals(await readFile(original.shots[0].fold)), "the render changed");
   const gallery = await readFile(result.htmlPath, "utf8");
   assert.match(gallery, /tryon-proposal\/styles-html\.desktop\.fold\.png/);
+});
+
+test("a benchmark captures the competitor's mapped pages beside ours and writes the report", { skip, timeout: 180_000 }, async () => {
+  const out = await mkdtemp(path.join(tmpdir(), "uic-bench-"));
+  const desktop = { width: 1024, height: 700, deviceScaleFactor: 1 };
+  const ours = await capture({ base, routes: ["/"], viewports: { desktop }, out, label: "before", sweep: { enabled: false } });
+  const config = { ...DEFAULTS, out, benchmarks: [{ name: "Rival", base, routes: { "/": "/about.html", "/missing": "/x" } }] };
+  const result = await benchmark({ dir: ours.dir, config, judge: false });
+  const b = result.benchmarks[0];
+  assert.equal(b.pages.length, 1, "only routes we captured are compared");
+  assert.equal(b.pages[0].theirRoute, "/about.html");
+  const theirs = JSON.parse(await readFile(path.join(b.dir, "manifest.json"), "utf8"));
+  assert.equal(path.basename(theirs.dir), "benchmark-rival");
+  assert.equal(theirs.shots[0].title, "About the fixture");
+  const html = await readFile(result.htmlPath, "utf8");
+  assert.match(html, /benchmark-rival\/about-html\.desktop\.fold\.png/);
+  await assert.rejects(() => benchmark({ dir: ours.dir, config: { ...config, benchmarks: [] }, judge: false }), /no benchmarks in the config/);
 });
 
 test("the design-system lint reads the real computed styles and finds the planted drift", { skip, timeout: 120_000 }, async () => {
