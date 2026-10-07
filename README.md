@@ -4,8 +4,18 @@ A second pair of eyes for a UI. Capture screenshots and measured facts from a ru
 site or app, get a ranked visual critique from Gemini or OpenAI that judges against your
 product's purpose and audience across every design discipline, triage it, ship the fixes,
 and verify with a before/after comparison. Websites are captured in a browser, Android
-apps on an emulator or device, iOS apps in the Simulator, and anything else from
-screenshots you already have.
+apps on an emulator or device, iOS apps in the Simulator (experimental), and anything else
+from screenshots you already have.
+
+Alongside the critique, which is judgement, it measures what does not need an opinion, free
+and on every web capture: a design-system lint (token drift, off-palette and
+colour-blind-unsafe colours, type and spacing sprawl), an interaction sweep that confirms
+with pixels which controls give no hover or keyboard feedback, and layout and accessibility
+facts under reflow, zoom, forced colours and colour-vision simulation. It compares the build
+with its Figma frames, reviews a Storybook component by component, benchmarks you against the
+competitors your visitors actually use, previews a CSS change on the live pages before you
+make it, tracks the score across runs, and renders the store and social images a listing asks
+for from the screens it already captured.
 
 It exists so one coding agent can ask another model for design review: Claude Code does the
 building and the judgement, Gemini does the looking. It works just as well for a human at a
@@ -538,6 +548,13 @@ Every knob has a default. Resolution order, lowest to highest: built-in defaults
   "followRequests": { "enabled": true, "maxPages": 3 },
   "concurrency": 3,
   "compare": { "confirmRegressions": true },
+  "lint": { "spacingBase": 4, "maxFamilies": 2, "maxSizes": 8, "nearDelta": 3 },
+  "sweep": { "enabled": true, "maxHover": 20, "maxTabs": 60 },
+  "a11y": false,
+  "benchmarks": [{ "name": "Jumia", "base": "https://www.jumia.com.ng", "routes": { "/": "/" } }],
+  "figma": { "file": "", "frames": { "/": "12:34" }, "scale": 2 },
+  "storybook": { "url": "", "include": [], "exclude": [], "all": false, "limit": 40 },
+  "assets": { "captions": {}, "background": null },
   "provider": "gemini",
   "disciplines": ["layout and grid: ...", "typography: ..."],
   "principles": ["Every action a user takes gets immediate, visible feedback: ..."],
@@ -552,13 +569,24 @@ Every knob has a default. Resolution order, lowest to highest: built-in defaults
 }
 ```
 
-Environment: `GEMINI_API_KEY` or `OPENAI_API_KEY` (one is required), `GEMINI_MODEL`,
-`UI_CRITIC_PROVIDER`, `UI_CRITIC_THINKING`, `UI_CRITIC_CACHE=0`, `UI_CRITIC_OUT`,
-`UI_CRITIC_BRIEF`, `UI_CRITIC_CONCURRENCY`. Flags: `--provider`, `--model`,
-`--thinking-level`, `--include-thoughts`, `--no-cache`, `--ttl`, `--temperature`,
-`--routes`, `--out`, `--brief`, `--context`, `--answers`, `--decisions`,
-`--follow-requests`, `--max-pages`, `--concurrency`, `--no-confirm`, `--config`,
-`--platform`, `--package`, `--serial`, `--bundle-id`, `--udid`, `--from-images`.
+Environment: `GEMINI_API_KEY` or `OPENAI_API_KEY` (one is required), `FIGMA_TOKEN` (only
+for `fidelity`), `GEMINI_MODEL`, `UI_CRITIC_PROVIDER`, `UI_CRITIC_THINKING`,
+`UI_CRITIC_CACHE=0`, `UI_CRITIC_OUT`, `UI_CRITIC_BRIEF`, `UI_CRITIC_CONCURRENCY`.
+
+Flags, by what they touch:
+
+- **Model and run:** `--provider`, `--model`, `--thinking-level`, `--include-thoughts`,
+  `--no-cache`, `--ttl`, `--temperature`, `--concurrency`, `--config`, `--out`, `--json`.
+- **What to capture:** `--base`, `--label`, `--routes`, `--brief`, `--context`,
+  `--answers`, `--decisions`, `--follow-requests`, `--max-pages`, `--a11y`, `--no-sweep`,
+  `--from-images`.
+- **Apps:** `--platform`, `--package`, `--serial`, `--bundle-id`, `--udid`.
+- **Storybook:** `--storybook <url>`, `--stories Button,Card`, `--all-stories`.
+- **Gating and comparison:** `--fail-on measured|regressed|worse|lint`, `--no-confirm`.
+- **Figma fidelity:** `--file <key or link>`, `--no-judge`.
+- **Try-on:** `--css <file>`, `--goal <text>`, `--variants N`, `--no-judge`, `--routes`.
+- **Assets:** `--kind store,social`, `--captions auto|<file>`, `--product <name>`.
+- **Trends and reports:** `--route <path>`, `--pr N`, `--artifact <dir>`.
 
 ### Thinking
 
