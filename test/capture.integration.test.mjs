@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { capture, loadPlaywright } from "../src/capture.mjs";
+import { lintCapture } from "../src/lint.mjs";
 
 /**
  * The web capture end to end, in a real browser, against a fixture site with
@@ -77,4 +78,32 @@ test("a real browser capture measures every planted defect", { skip, timeout: 18
   assert.equal(menu.stepError, null);
   assert.deepEqual(menu.steps, ["click text=Menu", "wait 100ms"]);
   assert.equal(menu.route, "/ [menu-open]");
+});
+
+test("the design-system lint reads the real computed styles and finds the planted drift", { skip, timeout: 120_000 }, async () => {
+  const out = await mkdtemp(path.join(tmpdir(), "uic-lint-"));
+  const manifest = await capture({
+    base,
+    routes: ["/styles.html"],
+    viewports: { desktop: { width: 1440, height: 900, deviceScaleFactor: 1 } },
+    out,
+    label: "t",
+  });
+  const lint = await lintCapture(manifest.dir);
+  const by = Object.fromEntries(lint.findings.map((f) => [f.rule, f]));
+  // The tokens came from the page's own :root custom properties.
+  assert.ok(lint.tokens.colors >= 4, `colour tokens read from :root (${lint.tokens.colors})`);
+  assert.match(by["color-near-token"].values.map((v) => `${v.value} ${v.note}`).join("|"), /#5b3ec9 almost --brand \(#5a3ec8\)/);
+  assert.ok(by["color-off-palette"].values.some((v) => v.value === "#e01e1e"));
+  assert.ok(!JSON.stringify(lint).includes("#00ff00"), "a hidden element's colour is not counted");
+  const offGrid = by["spacing-off-grid"].values.map((v) => v.value);
+  for (const v of ["13px", "6px", "10px"]) assert.ok(offGrid.includes(v), `${v} is off the 4px grid`);
+  assert.ok(lint.metrics.offGridSpacing >= 6, `every off-grid value is counted (${lint.metrics.offGridSpacing})`);
+  assert.ok(!offGrid.includes("16px") && !offGrid.includes("20px") && !offGrid.includes("3px"), "on-grid and hidden values are not flagged");
+  assert.ok(!offGrid.some((v) => /^16\.0\dpx$/.test(v)), "em rounding just off the grid is not drift");
+  assert.ok(by["type-families"].values.length >= 4, "Arial, Georgia, Courier New and Verdana");
+  assert.ok(by["type-line-height"], "the 1.05 paragraph is cramped");
+  assert.ok(by["type-line-length"].values[0].value.match(/^\d+ characters per line$/));
+  assert.ok(by["radius-drift"].values.some((v) => v.value === "7px"), "7px is not the 8px radius token");
+  assert.ok(by["type-sprawl"] || by["type-off-scale"], "13, 15, 17, 19, 21 and 29px sprawl off the 14/16/24 scale");
 });

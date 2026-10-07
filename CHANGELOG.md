@@ -41,6 +41,15 @@
   annotation for each confirmed regression; `summary` and `comment` do the same anywhere.
 - The web capture is tested end to end in a real browser against a fixture site with
   planted defects, in CI on every change.
+- Design-system lint (`ui-critic lint`, free): web captures record the style inventory
+  and the page's own tokens; the lint reports token drift (CIEDE2000), off-palette and
+  look-alike colours, type sizes off the scale and sprawl, too many families, cramped
+  line height, long lines, spacing off the grid, radius and shadow sprawl, with proposed
+  scales. `critique` runs it, gives the numbers to the site pass, and shows a Design
+  system section with swatches in critique.html. `--fail-on lint` gates CI.
+- Under Git Bash a route like `/` arrived as `C:/Program Files/Git/` and the capture
+  opened nothing; such routes are restored, and a Windows path given as a route is
+  refused with the reason.
 - `npx uicritic` runs the tool: `npx ui-critic` reached a different package that owns
   the unscoped name. The package now also installs a `uicritic` command, and a small
   `uicritic` package (published beside this one, at the same version) points at it.

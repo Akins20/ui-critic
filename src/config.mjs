@@ -170,6 +170,11 @@ export const DEFAULTS = {
   ledger: "usage.jsonl",
   android: ANDROID_DEFAULTS,
   ios: IOS_DEFAULTS,
+  // The design-system lint (free, measured): the spacing grid, how many sizes,
+  // families, radii and shadows are too many, how close a colour must be to a token
+  // to count as drift (CIEDE2000), and an optional tokens file (a flat map or W3C
+  // design tokens) beside the custom properties the pages declare.
+  lint: { spacingBase: 4, maxFamilies: 2, maxSizes: 8, maxRadii: 4, maxShadows: 3, nearDelta: 3, tokens: undefined },
   fromImages: undefined,
   json: false,
   failOn: undefined,
@@ -204,12 +209,35 @@ export function envOverrides(env = process.env) {
   return o;
 }
 
+/**
+ * Undoes Git Bash's path conversion. Under Git Bash (MSYS) an argument that starts
+ * with "/" is rewritten into the Windows path of its install folder, so --routes
+ * /shop arrives as C:/Program Files/Git/shop and the capture opens nothing. When
+ * MSYSTEM says the shell is MSYS, such a route is turned back into the path it was.
+ */
+export function unmangleRoute(route, env = process.env) {
+  if (!env.MSYSTEM) return route;
+  const m = /^[A-Za-z]:[\\/](?:.*?[\\/])?(?:Git|msys64|msys2|mingw64)(?:[\\/](.*))?$/i.exec(route);
+  if (!m) return route;
+  return `/${(m[1] ?? "").replace(/\\/g, "/")}`;
+}
+
 /** Overrides taken from command line flags (parsed by the CLI). */
-export function flagOverrides(flags) {
+export function flagOverrides(flags, env = process.env) {
   const o = {};
   if (flags.base) o.base = flags.base;
   if (flags.label) o.label = flags.label;
-  if (flags.routes) o.routes = flags.routes.split(",").map((r) => r.trim()).filter(Boolean);
+  if (flags.routes) {
+    o.routes = flags.routes
+      .split(",")
+      .map((r) => r.trim())
+      .filter(Boolean)
+      .map((r) => {
+        const fixed = unmangleRoute(r, env);
+        if (fixed !== r) process.stderr.write(`ui-critic: Git Bash rewrote the route ${fixed} as ${r}; using ${fixed}\n`);
+        return fixed;
+      });
+  }
   if (flags.out) o.out = flags.out;
   if (flags.model) o.model = flags.model;
   if (flags.brief) o.brief = flags.brief;
@@ -266,6 +294,10 @@ export function validate(cfg) {
     if (native) {
       const problems = nativeRouteProblems(r.path);
       if (problems.length) throw new Error(problems.join("; "));
+    } else if (/^[A-Za-z]:[\\/]/.test(r.path)) {
+      throw new Error(
+        `route ${r.path} is a Windows path, not a page: a shell such as Git Bash rewrote "/..." into a folder. Put the routes in ui-critic.config.json, or set MSYS_NO_PATHCONV=1 for the command`,
+      );
     }
   }
   if (!Array.isArray(cfg.scenarios)) throw new Error("scenarios must be a list");
@@ -315,6 +347,10 @@ export function validate(cfg) {
   }
   if (!(Number.isInteger(cfg.followRequests.maxPages) && cfg.followRequests.maxPages >= 0)) {
     throw new Error("followRequests.maxPages must be a non-negative integer");
+  }
+  if (cfg.lint) {
+    if (!(Number.isInteger(cfg.lint.spacingBase) && cfg.lint.spacingBase > 0)) throw new Error("lint.spacingBase must be a positive integer of pixels");
+    if (!(cfg.lint.nearDelta > 0 && cfg.lint.nearDelta <= 20)) throw new Error("lint.nearDelta must be a colour difference from 0 to 20");
   }
   if (!Array.isArray(cfg.disciplines) || cfg.disciplines.length === 0) throw new Error("disciplines must be a non-empty list");
   if (!Array.isArray(cfg.principles)) throw new Error("principles must be a list");

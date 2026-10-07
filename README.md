@@ -244,6 +244,7 @@ triage instead of obeying.
 | `run --base url --label name` | capture then critique |
 | `verify --before dir --base url` | capture "after" then compare, in one step |
 | `cost [--out dir]` | total the usage ledger per run at today's prices |
+| `lint --in dir` | design-system lint from the computed styles: token drift, palette, type, spacing, radius, shadow (free) |
 | `report --in dir` | render `critique.html` and `compare.html` again from saved results, with no calls |
 | `summary --in dir` | a short Markdown summary for a pull request or a CI job |
 | `comment --in dir [--pr N]` | post that summary on the pull request, or update the earlier one |
@@ -261,6 +262,31 @@ the second look.
 Calls run a few at a time (`concurrency`, default 3, `--concurrency N`,
 `UI_CRITIC_CONCURRENCY`); each finished page or pair is checkpointed as it lands and the
 report keeps the capture order.
+
+## Design-system lint (free)
+
+Every web capture also records the page's style inventory: each colour, font
+family, size, weight, line height, spacing value, radius and shadow actually rendered,
+with how often and where, and the CSS custom properties the page declares (its
+tokens). `ui-critic lint --in <dir>` checks one against the other with no model and no
+cost, and `critique` runs it too and hands the numbers to the critic's site-level pass
+as measured facts:
+
+- **Token drift:** a colour a hair away from a token (`#5b3ec9` where `--brand` is
+  `#5a3ec8`, a CIEDE2000 difference you cannot see) is a typed value, not the token,
+  and a theme change will miss it. Off-palette colours are listed by use, and without
+  tokens, colours that look identical are paired.
+- **Type:** sizes off the declared scale, too many sizes or families, body text with a
+  cramped line height, lines over 90 characters.
+- **Spacing:** padding, margins and gaps off the grid (`lint.spacingBase`, 4px by
+  default; within half a pixel counts as on it).
+- **Radius and shadow sprawl,** against radius tokens when there are any.
+
+Each finding names the values, how often they are used, sample elements and pages,
+and the fix; the report ends with proposed scales (a palette, a fitted modular type
+scale, spacing and radii). Tokens beyond the page's own custom properties can come
+from `lint.tokens` (a flat map or W3C design tokens). `--fail-on lint` exits 2 on a
+high-severity finding, for CI.
 
 ## In CI
 

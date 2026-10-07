@@ -12,6 +12,7 @@ import { runPool, serialWriter } from "./pool.mjs";
 import { nouns, isNative, detailImages } from "./shots.mjs";
 import { DEFAULT_DISCIPLINES, NATIVE_DISCIPLINES } from "./config.mjs";
 import { renderCritiqueHTML } from "./html.mjs";
+import { lintCapture, renderLint, lintForPrompt } from "./lint.mjs";
 
 /**
  * The critic's standing instructions. The disciplines list is spelled out so the
@@ -355,10 +356,11 @@ const REGION_RULE =
   "For every finding, set region to the viewport and image where it shows most clearly (first is the first-screen capture, full the full-page capture, frame2 and on the scroll frames) and a box [ymin, xmin, ymax, xmax] from 0 to 1000 tightly around the element on that image, or an empty box when it is not in one place.";
 
 /** The task for the whole-site (or whole-app) pass. */
-export function siteTask(platform = "web", seen = "", launchErrors = []) {
+export function siteTask(platform = "web", seen = "", launchErrors = [], lintFacts = "") {
   const { item, items, whole } = nouns(platform);
   const launch = launchErrors.length ? ` Errors the app logs on every plain launch (report them once here if they matter, never per ${item}): ${launchErrors.join(" | ")}.` : "";
-  return `## Task\nUsing the first screen of every ${item} at every viewport, judge the whole ${whole}: consistency of type scale, spacing rhythm, components and tone across ${items}; whether a redesign is warranted or targeted fixes suffice (revamp_needed); and the five changes with the highest impact for the least effort across the ${whole}. Keep consistency_findings to genuine cross-${item} patterns (at most six) and do not repeat per-${item} findings. Set each finding's page to the one ${item} that shows the pattern best and its region on that ${item}'s first screen (image first), with an empty box when no single place shows it. List anything you still need in requests.${launch} Per-${item} findings already recorded: ${seen}`;
+  const lint = lintFacts ? ` Design-system measurements across every ${item}, taken from the computed styles (ground truth for consistency; cite them, and do not contradict them): ${lintFacts}.` : "";
+  return `## Task\nUsing the first screen of every ${item} at every viewport, judge the whole ${whole}: consistency of type scale, spacing rhythm, components and tone across ${items}; whether a redesign is warranted or targeted fixes suffice (revamp_needed); and the five changes with the highest impact for the least effort across the ${whole}. Keep consistency_findings to genuine cross-${item} patterns (at most six) and do not repeat per-${item} findings. Set each finding's page to the one ${item} that shows the pattern best and its region on that ${item}'s first screen (image first), with an empty box when no single place shows it. List anything you still need in requests.${launch}${lint} Per-${item} findings already recorded: ${seen}`;
 }
 
 async function readAudit(shot) {
@@ -507,8 +509,18 @@ export async function critique({ dir, config }) {
       .flatMap((p) => p.findings.map((f) => `[${p.route}] ${f.observation}`))
       .slice(0, 60)
       .join(" | ");
+    // The design-system lint is free and measured: run it, keep its report beside the
+    // critique, and give the site pass its numbers.
+    let lint = null;
+    try {
+      lint = await lintCapture(dir, config.lint ?? {});
+      await writeFile(path.join(dir, "lint.json"), JSON.stringify(lint, null, 2));
+      await writeFile(path.join(dir, "lint.md"), renderLint(lint));
+    } catch {
+      lint = null;
+    }
     const parts = cached ? [] : [...prefix];
-    parts.push(text(siteTask(platform, seen, manifest.launchErrors ?? [])));
+    parts.push(text(siteTask(platform, seen, manifest.launchErrors ?? [], lint ? lintForPrompt(lint) : "")));
 
     let overall;
     let siteError = null;
@@ -549,6 +561,7 @@ export async function critique({ dir, config }) {
       followed,
       skipped: manifest.skipped ?? [],
       decisions,
+      ...(lint ? { lint } : {}),
       usage: client.summary(),
       ...(siteError ? { error: siteError } : {}),
     };

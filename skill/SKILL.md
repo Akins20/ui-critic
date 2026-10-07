@@ -64,6 +64,8 @@ not see the code or the product decisions, only what you give it.
    Same-origin pages the critic asks for are captured and reviewed in the same run. Read
    `critique.md`, including the measured facts line per page and the usage line. Point the
    user at `critique.html` (findings boxed on the screenshots) when they want to see them.
+   Also read `lint.md` (written beside the critique, free): token drift and spacing or
+   type sprawl are objective; fix drift by using the token the value was meant to be.
 5. **Answer the critic.** Anything left under "Critic's requests" (files, answers,
    measurements, pages elsewhere) is yours to fulfil: write answers in
    `ui-critic/answers.md`, add files to `context.files`, add pages to `routes`, and rerun

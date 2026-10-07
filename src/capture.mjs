@@ -3,6 +3,7 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { auditScript } from "./audit.mjs";
+import { stylesScript } from "./styles.mjs";
 import { runSteps, readEnvFile, normalizeRoute } from "./steps.mjs";
 
 const PLAYWRIGHT_PACKAGES = ["playwright", "@playwright/test", "playwright-core"];
@@ -190,7 +191,17 @@ async function shoot({ page, dir, slug, viewportName, route, label, extra = {}, 
   }
   if (runtime) facts.runtime = await runtime.read();
   await writeFile(audit, JSON.stringify(facts, null, 2));
-  return { route: label, path: route, url: page.url(), viewport: viewportName, title: await page.title(), fold, full, audit, hiddenFixed, ...extra };
+  // The style inventory for the design-system lint, kept apart from the audit so the
+  // critic's copy of the facts stays short.
+  let styles = null;
+  try {
+    const inventory = await page.evaluate(stylesScript);
+    styles = path.join(dir, `${slug}.${viewportName}.styles.json`);
+    await writeFile(styles, JSON.stringify(inventory));
+  } catch {
+    styles = null;
+  }
+  return { route: label, path: route, url: page.url(), viewport: viewportName, title: await page.title(), fold, full, audit, styles, hiddenFixed, ...extra };
 }
 
 /**

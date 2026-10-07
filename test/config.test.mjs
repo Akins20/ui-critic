@@ -3,7 +3,18 @@ import assert from "node:assert/strict";
 import { mkdtemp, writeFile, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { DEFAULTS, merge, envOverrides, flagOverrides, validate, loadConfig, init } from "../src/config.mjs";
+import { DEFAULTS, merge, envOverrides, flagOverrides, validate, loadConfig, init, unmangleRoute } from "../src/config.mjs";
+
+test("routes Git Bash rewrote into Windows paths are restored, and other Windows paths are refused", () => {
+  const msys = { MSYSTEM: "MINGW64" };
+  assert.equal(unmangleRoute("C:/Program Files/Git/", msys), "/");
+  assert.equal(unmangleRoute("C:/Program Files/Git/shop", msys), "/shop");
+  assert.equal(unmangleRoute("C:\\msys64\\account\\plans", msys), "/account/plans");
+  assert.equal(unmangleRoute("C:/Program Files/Git/shop", {}), "C:/Program Files/Git/shop", "only under MSYS");
+  assert.equal(unmangleRoute("/shop", msys), "/shop");
+  assert.deepEqual(flagOverrides({ routes: "C:/Program Files/Git/,C:/Program Files/Git/shop" }, msys).routes, ["/", "/shop"]);
+  assert.throws(() => validate(merge(DEFAULTS, { routes: ["D:/projects/site/index.html"] })), /is a Windows path, not a page/);
+});
 
 test("merge is deep for objects and replaces arrays and scalars", () => {
   const out = merge({ a: { x: 1, y: 2 }, list: [1, 2], s: "a" }, { a: { y: 3 }, list: [9], s: "b", u: undefined });

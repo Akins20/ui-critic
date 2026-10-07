@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Token drift</title>
+<style>
+  :root {
+    --brand: #5a3ec8;
+    --ink: #1c1b1f;
+    --muted: #5f5e66;
+    --surface: #ffffff;
+    --space-2: 8px;
+    --space-4: 16px;
+    --radius: 8px;
+    --text-sm: 14px;
+    --text-md: 16px;
+    --text-lg: 24px;
+  }
+  body { margin: 0; font: 16px/1.5 Arial, sans-serif; color: var(--ink); background: var(--surface); }
+  main { padding: var(--space-4); }
+  h1 { font-size: var(--text-lg); color: var(--brand); }
+  .ok { color: var(--muted); font-size: var(--text-sm); margin: var(--space-2) 0; }
+  /* Drift: almost the brand colour, an off-palette red, spacing off the 4px grid. */
+  .near { color: #5b3ec9; padding: 13px; border-radius: 7px; }
+  .stray { color: #e01e1e; margin-top: 18px; padding: 6px 10px; }
+  .cramped { line-height: 1.05; font-size: 15px; }
+  .wide { max-width: none; width: 1200px; font-size: 16px; }
+  .card { border-radius: 12px; box-shadow: 0 1px 2px rgba(0,0,0,.2); padding: 16px; }
+  .card2 { border-radius: 10px; box-shadow: 0 2px 6px rgba(0,0,0,.25); padding: 20px; }
+  .card3 { border-radius: 9px; box-shadow: 0 4px 12px rgba(0,0,0,.3); padding: 24px; }
+  .t13 { font-size: 13px; } .t17 { font-size: 17px; } .t19 { font-size: 19px; } .t21 { font-size: 21px; } .t29 { font-size: 29px; }
+  .serif { font-family: Georgia, serif; } .mono { font-family: "Courier New", monospace; } .other { font-family: Verdana, sans-serif; }
+  .hidden-drift { display: none; color: #00ff00; padding: 3px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Token drift</h1>
+  <p class="ok">On the scale and the palette.</p>
+  <p class="near">Nearly the brand colour.</p>
+  <p class="stray">An off-palette red with odd spacing.</p>
+  <p class="cramped">Cramped lines of text that sit far too close together for comfortable reading across several lines of a paragraph.</p>
+  <p class="wide">A very long line of body text that runs on and on across the whole width of a desktop screen without any measure at all, which makes it hard to find the start of the next line when reading quickly through a paragraph of explanation.</p>
+  <div class="card">One</div>
+  <div class="card2">Two</div>
+  <div class="card3">Three</div>
+  <p class="t13">13</p><p class="t17">17</p><p class="t19">19</p><p class="t21">21</p><p class="t29">29</p>
+  <p class="serif">Serif</p><p class="mono">Mono</p><p class="other">Other</p>
+  <p class="hidden-drift">Hidden and ignored</p>
+</main>
+</body>
+</html>

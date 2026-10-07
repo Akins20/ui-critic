@@ -83,6 +83,8 @@ details { margin-top: 10px; } summary { cursor: pointer; color: var(--muted); fo
 .hidden { display: none !important; }
 ul.plain { padding-left: 18px; margin: 6px 0; }
 .empty { color: var(--muted); }
+.chip { display: inline-block; width: 12px; height: 12px; border-radius: 3px; border: 1px solid var(--line); vertical-align: -1px; margin-right: 6px; }
+code { font: 13px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
 `;
 
 const SCRIPT = `
@@ -176,6 +178,31 @@ function pageShots(dir, shots, findings, numbers) {
   return `<div class="shots">${shown.join("")}${folded.length ? `<details><summary>${folded.length} more capture${folded.length === 1 ? "" : "s"}</summary><div class="shots">${folded.join("")}</div></details>` : ""}</div>`;
 }
 
+/** A colour chip for a value that is a colour, or nothing. */
+function swatch(value) {
+  const hex = /^#[0-9a-f]{6}/i.exec(String(value))?.[0];
+  return hex ? `<span class="chip" style="background:${hex}" aria-hidden="true"></span>` : "";
+}
+
+/** The design-system lint as a section: metrics, findings with swatches, the proposed scales. */
+function lintSection(lint) {
+  const m = lint.metrics ?? {};
+  const facts = [`${m.colorsUsed ?? 0} colours`, m.colorTokens ? `token coverage ${Math.round((m.tokenCoverage ?? 0) * 100)}%` : "no colour tokens", `${m.fontSizes ?? 0} font sizes`, `${m.families ?? 0} families`, `${m.radii ?? 0} radii`, `${m.shadows ?? 0} shadows`, `${m.offGridSpacing ?? 0} spacing values off the grid`];
+  const items = (lint.findings ?? []).map(
+    (f) => `<li class="finding sev-${esc(f.severity)}"><span class="tag">${esc(f.severity)}, ${esc(f.rule)}</span><p><strong>${esc(f.title)}</strong>. ${esc(f.detail)}</p><ul class="plain">${f.values
+      .map((v) => `<li>${swatch(v.value)}<code>${esc(v.value)}</code> used ${esc(v.count)}x${v.note ? `, ${esc(v.note)}` : ""}${v.samples?.length ? ` <span class="tag">(${esc(v.samples.join("; "))})</span>` : ""}</li>`)
+      .join("")}</ul><p class="do">Do: ${esc(f.fix)}</p></li>`,
+  );
+  const p = lint.proposal ?? {};
+  const proposal = [
+    p.palette?.length ? `<p>Palette: ${p.palette.map((c) => `${swatch(c.color)}<code>${esc(c.color)}</code>`).join(" ")}</p>` : "",
+    p.typeScale ? `<p>Type: ratio ${esc(p.typeScale.ratio)} from ${esc(p.typeScale.base)}: ${esc(p.typeScale.steps.join(", "))}</p>` : "",
+    p.spacing?.length ? `<p>Spacing: ${esc(p.spacing.join(", "))}</p>` : "",
+    p.radii?.length ? `<p>Radii: ${esc(p.radii.join(", "))}</p>` : "",
+  ].join("");
+  return `<section class="page" id="design-system"><div class="page-head"><h2>Design system</h2><span class="tag">measured from the computed styles, free</span></div><p class="facts">${esc(facts.join(", "))}</p>${items.length ? `<ol class="findings">${items.join("")}</ol>` : '<p class="empty">No drift: the pages keep to their tokens and scales.</p>'}<details><summary>Proposed scales</summary>${proposal}</details></section>`;
+}
+
 /** The critique as one HTML page. */
 export function renderCritiqueHTML(result, manifest, dir) {
   const shotsByRoute = new Map();
@@ -236,6 +263,8 @@ ${page.strengths?.length ? `<details><summary>Strengths (${page.strengths.length
 ${page.coverage?.length ? `<details><summary>Disciplines checked (${page.coverage.length})</summary><ul class="plain">${page.coverage.map((c) => `<li><strong>${esc(c.discipline)}</strong>: ${esc(c.status)}. ${esc(c.note)}</li>`).join("")}</ul></details>` : ""}
 </div></div></section>`);
   }
+
+  if (result.lint) parts.push(lintSection(result.lint));
 
   const extras = [];
   const open = (result.requests ?? []).filter((r) => !(r.kind === "page" && result.followed?.routes?.includes(r.target)));

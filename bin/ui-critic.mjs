@@ -21,7 +21,8 @@ import { rerender } from "../src/html.mjs";
 import { renderCritique } from "../src/report.mjs";
 import { compareSummary, critiqueSummary, annotations } from "../src/summary.mjs";
 import { upsertComment, pullRequestNumber } from "../src/github.mjs";
-import { appendFile, readFile } from "node:fs/promises";
+import { appendFile, readFile, writeFile } from "node:fs/promises";
+import { lintCapture, renderLint } from "../src/lint.mjs";
 
 /** The short summary of the results saved in a capture folder: the comparison if there is one, else the critique. */
 async function summaryOf(dir, opts) {
@@ -59,6 +60,8 @@ Commands
   run        --base <url> --label <name>             capture then critique, in one go
   verify     --before <dir> --base <url> [--label after]   capture "after" then compare
   cost       [--out <dir>]                           total the usage ledger per run at today's prices
+  lint       --in <capture dir> [--fail-on lint]     design-system lint from the computed styles (free): token drift,
+                                                    off-palette colours, spacing off the grid, type, radius and shadow sprawl
   report     --in <capture dir>                      render critique.html and compare.html again from saved results (free)
   summary    --in <capture dir> [--fail-on x]        a short Markdown summary for a pull request or a CI job
   comment    --in <capture dir> [--pr N]             post that summary on the pull request, or update the earlier one
@@ -281,6 +284,25 @@ async function main() {
         for (const s of found.ios) lines.push(`ios      ${s.udid.padEnd(38)} ${s.name} (${s.runtime})`);
         if (!lines.length) lines.push("no devices or simulators found");
         process.stdout.write([...lines, ...found.notes].join("\n") + "\n");
+      }
+      return;
+    }
+    case "lint": {
+      if (!flags.in) throw new Error("lint needs --in <capture dir>");
+      const result = await lintCapture(flags.in, config.lint ?? {});
+      const jsonPath = path.join(flags.in, "lint.json");
+      const mdPath = path.join(flags.in, "lint.md");
+      await writeFile(jsonPath, JSON.stringify(result, null, 2));
+      await writeFile(mdPath, renderLint(result));
+      const count = (s) => result.findings.filter((f) => f.severity === s).length;
+      emit(
+        config,
+        [`lint written:\n  ${mdPath}\n  ${jsonPath}`, `${result.findings.length} findings (${count("high")} high, ${count("medium")} medium, ${count("low")} low)`, ...result.findings.map((f) => `  [${f.severity}] ${f.title}`)].join("\n"),
+        { command: "lint", findings: result.findings.map((f) => ({ rule: f.rule, severity: f.severity, title: f.title })), metrics: result.metrics, files: { json: jsonPath, md: mdPath } },
+      );
+      if (config.failOn === "lint" && count("high") > 0) {
+        process.stderr.write(`ui-critic: --fail-on lint matched ${count("high")} high-severity finding(s)\n`);
+        process.exitCode = 2;
       }
       return;
     }
