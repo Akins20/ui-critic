@@ -68,10 +68,16 @@ export function renderCritique(result) {
   lines.push("");
   lines.push("### Top priorities");
   result.overall.top_priorities.forEach((p, i) => lines.push(`${i + 1}. ${p}`));
+  const native = result.platform && result.platform !== "web";
   if (result.overall.consistency_findings.length) {
     lines.push("");
-    lines.push("### Cross-page findings");
+    lines.push(native ? "### Cross-screen findings" : "### Cross-page findings");
     for (const f of sortFindings(result.overall.consistency_findings)) lines.push(findingLine(f));
+  }
+  if (result.launchErrors?.length) {
+    lines.push("");
+    lines.push("### Errors the app logs on every launch");
+    for (const e of result.launchErrors) lines.push(`- ${e}`);
   }
   if (result.skipped?.length) {
     lines.push("");
@@ -100,6 +106,8 @@ export function renderCritique(result) {
       .map(([vp, a]) => `${vp}: ${auditSummary(a)}`)
       .filter((s) => !s.endsWith(": "));
     if (measured.length) lines.push(`Measured: ${measured.join("; ")}`);
+    if (page.stepError) lines.push(`A step failed, so this may not show the intended state: ${page.stepError}`);
+    if (page.stepWarnings?.length) lines.push(`Steps that changed nothing on screen: ${page.stepWarnings.join("; ")}`);
     const cov = coverageLine(page.coverage);
     if (cov) lines.push(cov);
     if (page.strengths.length) {

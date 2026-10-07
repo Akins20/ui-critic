@@ -9,36 +9,75 @@ import { requireBrief, contextSections } from "./brief.mjs";
 import { loadDecisions, decisionsSection, withholdSettled } from "./decisions.mjs";
 import { readEnvFile } from "./steps.mjs";
 import { runPool, serialWriter } from "./pool.mjs";
+import { nouns, isNative, detailImages } from "./shots.mjs";
+import { DEFAULT_DISCIPLINES, NATIVE_DISCIPLINES } from "./config.mjs";
 
 /**
  * The critic's standing instructions. The disciplines list is spelled out so the
  * review sweeps every craft (type, spacing, dividers, states, motion and the rest)
  * and accounts for each in coverage, instead of fixating on the loudest problem.
  */
-export function preamble(disciplines, principles = []) {
+export function preamble(disciplines, principles = [], platform = "web") {
   const list = disciplines.map((d, i) => `${i + 1}. ${d}`).join("\n");
   const rules = principles.map((p, i) => `${i + 1}. ${p}`).join("\n");
-  return `${PREAMBLE}
+  const { item } = nouns(platform);
+  return `${rulesFor(platform)}
 
-Design disciplines to sweep on every page, one by one. For each, either raise a finding or record in coverage that you checked it and it is fine (or not applicable), with a one-line note:
+Design disciplines to sweep on every ${item}, one by one. For each, either raise a finding or record in coverage that you checked it and it is fine (or not applicable), with a one-line note:
 ${list}${rules ? `
 
-Interaction principles every screen must satisfy. A violation is a finding; name the principle in the observation. Where a screenshot cannot show it (a pressed state, a loading state, an error state), say so and ask for the measurement or the page state in requests rather than assuming it is fine:
+Interaction principles every screen must satisfy. A violation is a finding; name the principle in the observation. Where a screenshot cannot show it (a pressed state, a loading state, an error state), say so and ask for the measurement or the ${item} state in requests rather than assuming it is fine:
 ${rules}` : ""}`;
 }
 
-export const PREAMBLE = `You are a senior product designer and conversion specialist reviewing a live website from screenshots and measured facts. You are fluent in every craft of interface design: layout, spacing, typography, colour, surfaces and dividers, iconography, component states, motion, copy, accessibility and conversion.
+const SUBJECT = {
+  web: "a live website",
+  android: "a native Android app",
+  ios: "a native iOS app",
+  images: "a product's screens",
+};
+
+/**
+ * The rule about runtime facts, per platform: on the web the browser reports
+ * console errors and layout shift; an app's log is noisier, so its error lines are
+ * weaker evidence than a crash.
+ */
+const RUNTIME_RULE = {
+  web: "- Runtime facts in the measured data (console errors, failed requests, HTTP errors, cumulative layout shift) are defects a screenshot cannot show: report each as a finding with the exact message or URL, and treat a layout shift above 0.1 as a real problem.",
+  android:
+    "- Runtime facts in the measured data: a crash, an ANR, or the app no longer in the foreground is a defect to report with the exact message. Error log lines are weaker evidence (an app's log carries framework noise, and errors seen on every launch are listed once for the run, not per screen): report them when they plausibly explain something visible or point at a real fault. Frame timing appears only from a physical device; a janky-frame share above ten percent while scrolling is worth reporting.",
+  ios: "- Runtime facts, when present, are defects a screenshot cannot show: report each with the exact message.",
+  images: "- There are no runtime facts for supplied screenshots; do not guess at loading behaviour or errors you cannot see.",
+};
+
+/** Platform conventions the critic judges against where the brief is silent. */
+const PLATFORM_RULE = {
+  web: "",
+  android:
+    "\n- This is an Android app: judge it against Android conventions (Material Design top app bars, back behaviour, bottom navigation, touch targets of at least 48dp, system bars and edge-to-edge insets) wherever the brief does not decide otherwise. Measured sizes are in dp and are each element's bounds: a touch area enlarged beyond the bounds (React Native hitSlop, an Android TouchDelegate) cannot be seen in them, so present a small target as likely rather than certain, and recommend checking for an enlarged touch area before resizing the visual. An unlabelled control is one a screen reader announces without a name. Contrast is measured from the screenshot's pixels, so treat a ratio as close, not exact; samples drawn over a busy background or under a floating bar are counted, not measured. The scroll status says only how far the capture went, never that content is hidden.",
+  ios: "\n- This is an iOS app: judge it against Apple's Human Interface Guidelines (navigation and tab bars, touch targets of at least 44pt, safe areas, Dynamic Type) wherever the brief does not decide otherwise.",
+  images: "\n- These are screenshots the team supplied, not a live capture: measured facts are few, so judge from the pixels and ask in requests for anything you cannot see.",
+};
+
+/** The critic's standing rules for a platform; the web wording is the original one. */
+export function rulesFor(platform = "web") {
+  const p = SUBJECT[platform] ? platform : "web";
+  const { item } = nouns(p);
+  return `You are a senior product designer and conversion specialist reviewing ${SUBJECT[p]} from screenshots and measured facts. You are fluent in every craft of interface design: layout, spacing, typography, colour, surfaces and dividers, iconography, component states, motion, copy, accessibility and conversion.
 
 Rules:
-- Every finding must cite what you actually see: the screenshot (page and viewport), the element, its text or position. Never invent elements or assume what is off screen.
+- Every finding must cite what you actually see: the screenshot (${item} and viewport), the element, its text or position. Never invent elements or assume what is off screen.
 - Measured facts (fonts, sizes, target sizes, contrast ratios) are ground truth: use them instead of estimating, and do not contradict them.
 - Rank by impact on a first-time visitor's ability to understand the offer, trust it and act. Say why each finding matters.
 - Recommendations must be specific and testable (sizes, order, wording, placement), never generic advice. Never suggest dark patterns or fake urgency.
 - The brief's product purpose, audience, brand and constraints are decisions already made: judge against them, not against a generic store.
 - Separate genuine UI defects from placeholder content the brief tells you to ignore, and say which is which.
-- If you cannot judge something well from what you were given, ask for it in requests (a page path, a file, a question for the team, a measurement) rather than guessing.
-- Runtime facts in the measured data (console errors, failed requests, HTTP errors, cumulative layout shift) are defects a screenshot cannot show: report each as a finding with the exact message or URL, and treat a layout shift above 0.1 as a real problem.
+- If you cannot judge something well from what you were given, ask for it in requests (${isNative(p) ? "a screen and how to reach it" : "a page path"}, a file, a question for the team, a measurement) rather than guessing.
+${RUNTIME_RULE[p]}${PLATFORM_RULE[p]}
 - Scores are 0 to 100 against what a strong competitor in the same market ships today: 50 is average, 80 is excellent.`;
+}
+
+export const PREAMBLE = rulesFor("web");
 
 /**
  * The viewport values a finding may name: every viewport the capture used, plus
@@ -108,33 +147,38 @@ const COVERAGE = {
   required: ["discipline", "status", "note"],
 };
 
-const REQUEST = {
+const requestSchema = (platform) => ({
   type: "OBJECT",
   properties: {
     kind: { type: "STRING", enum: ["page", "file", "answer", "measurement"] },
-    target: { type: "STRING", description: "a page path like /checkout, a file such as the design tokens, a question for the team, or what to measure" },
+    target: {
+      type: "STRING",
+      description: isNative(platform)
+        ? "a screen (its deep link, or the taps that reach it), a file such as the design tokens, a question for the team, or what to measure"
+        : "a page path like /checkout, a file such as the design tokens, a question for the team, or what to measure",
+    },
     why: { type: "STRING", description: "what judgement this would unblock" },
   },
   required: ["kind", "target", "why"],
-};
+});
 
 /** The schema of one page review, for a capture with the given viewport names. */
-export const pageSchema = (viewports) => ({
+export const pageSchema = (viewports, platform = "web") => ({
   type: "OBJECT",
   properties: {
     page: { type: "STRING" },
-    summary: { type: "STRING", description: "two sentences on how this page performs for its job" },
+    summary: { type: "STRING", description: `two sentences on how this ${nouns(platform).item} performs for its job` },
     score: { type: "INTEGER" },
     strengths: { type: "ARRAY", items: { type: "STRING" } },
     findings: { type: "ARRAY", items: findingSchema(viewports) },
     coverage: { type: "ARRAY", items: COVERAGE, description: "one entry per design discipline in the list, in order" },
-    requests: { type: "ARRAY", items: REQUEST, description: "what else you need to judge this page better; empty if nothing" },
+    requests: { type: "ARRAY", items: requestSchema(platform), description: `what else you need to judge this ${nouns(platform).item} better; empty if nothing` },
   },
   required: ["page", "summary", "score", "strengths", "findings", "coverage", "requests"],
 });
 
 /** The schema of the site-level review, for a capture with the given viewport names. */
-export const overallSchema = (viewports) => ({
+export const overallSchema = (viewports, platform = "web") => ({
   type: "OBJECT",
   properties: {
     verdict: { type: "STRING", description: "three sentences: what works, what does not, what to do" },
@@ -146,7 +190,7 @@ export const overallSchema = (viewports) => ({
       items: { type: "STRING" },
       description: "the five changes with the highest impact for the least effort, most valuable first",
     },
-    requests: { type: "ARRAY", items: REQUEST, description: "what else you need to judge the site better; empty if nothing" },
+    requests: { type: "ARRAY", items: requestSchema(platform), description: `what else you need to judge the ${nouns(platform).whole} better; empty if nothing` },
   },
   required: ["verdict", "score", "revamp_needed", "consistency_findings", "top_priorities", "requests"],
 });
@@ -184,6 +228,8 @@ export function mergeRequests(lists) {
  * is left for the human or agent.
  */
 export function followablePages(requests, manifest, maxPages) {
+  // An app screen has no address to open, so its requests go to the human or agent.
+  if (isNative(manifest.platform)) return [];
   const have = new Set(manifest.shots.map((s) => s.path ?? s.route));
   const out = [];
   for (const r of requests) {
@@ -206,6 +252,59 @@ export function followablePages(requests, manifest, maxPages) {
     if (out.length >= maxPages) break;
   }
   return out;
+}
+
+/**
+ * The disciplines for a capture: the configured list, except that an app capture
+ * reviewed with the untouched web list gets the native one, which speaks of platform
+ * conventions instead of breakpoints.
+ */
+export function disciplinesFor(config, platform) {
+  return isNative(platform) && config.disciplines === DEFAULT_DISCIPLINES ? NATIVE_DISCIPLINES : config.disciplines;
+}
+
+/** How a shot's first screen is named to the critic. */
+export const foldLabel = (platform) => (isNative(platform) ? "first screen" : "above the fold");
+
+/**
+ * The task for one page or screen review. A scenario says which steps produced the
+ * state, and when a step failed or changed nothing the critic is told the intended
+ * state may not be on screen, so it reviews what the capture shows instead of what
+ * the scenario meant to show.
+ */
+export function pageTask(route, shots, platform = "web") {
+  const s = shots[0];
+  const { item } = nouns(platform);
+  const subject = s.scenario ? `the state "${s.scenario}" of the ${item} ${s.path}` : `the ${item} ${route}`;
+  let state = "";
+  if (s.scenario) {
+    state = `, captured after these steps: ${(s.steps ?? []).join("; ") || "none"}`;
+    if (s.stepError) state += ` (a step failed: ${s.stepError})`;
+    const warnings = Array.from(new Set(shots.flatMap((x) => x.stepWarnings ?? [])));
+    if (warnings.length) state += `. Some steps had no visible effect (${warnings.join("; ")})`;
+    state += ". Judge the state the interaction produced: the feedback, the affordance, what changed and whether it is clear";
+    if (s.stepError || warnings.length) {
+      state += ". Because a step failed or changed nothing, the capture may not show the intended state: judge what it does show, and say plainly in a finding that the intended state was not reached instead of reviewing it";
+    }
+  }
+  const signedIn = s.auth ? ". The visitor is signed in" : "";
+  let what;
+  if (isNative(platform)) {
+    what = shots.some((x) => detailImages(x).length)
+      ? "You already have its first screen per viewport; here are its further scroll frames per viewport, in order, and the measured facts. Frames overlap a little, and bars fixed to the screen edges (an app bar, a bottom navigation bar) repeat in every frame: judge them once."
+      : "You already have its first screen per viewport, and it does not scroll, so that is all of it; here are the measured facts.";
+  } else {
+    what =
+      "You already have its above-the-fold capture per viewport; here is the full-page capture per viewport (the whole scroll) and the measured facts. Full-page captures omit bars fixed to the bottom of the viewport (a sticky buy bar, a tab bar): judge those from the first-screen capture, and never report them as covering the footer.";
+  }
+  return `## Task\nReview ${subject} ("${s.title}")${state}${signedIn}. ${what} Name the ${item}'s real strengths first, then list findings, then account for every design discipline in coverage, then anything you still need in requests. Set page to "${route}".`;
+}
+
+/** The task for the whole-site (or whole-app) pass. */
+export function siteTask(platform = "web", seen = "", launchErrors = []) {
+  const { item, items, whole } = nouns(platform);
+  const launch = launchErrors.length ? ` Errors the app logs on every plain launch (report them once here if they matter, never per ${item}): ${launchErrors.join(" | ")}.` : "";
+  return `## Task\nUsing the first screen of every ${item} at every viewport, judge the whole ${whole}: consistency of type scale, spacing rhythm, components and tone across ${items}; whether a redesign is warranted or targeted fixes suffice (revamp_needed); and the five changes with the highest impact for the least effort across the ${whole}. Keep consistency_findings to genuine cross-${item} patterns (at most six) and do not repeat per-${item} findings. List anything you still need in requests.${launch} Per-${item} findings already recorded: ${seen}`;
 }
 
 async function readAudit(shot) {
@@ -262,16 +361,19 @@ export async function critique({ dir, config }) {
 
   const extra = await contextSections(config);
   const decisions = await loadDecisions(config);
-  const prefix = [text(preamble(config.disciplines, config.principles)), text(briefSection(config.briefText))];
+  // The capture decides the platform: a web config can critique an app capture.
+  const platform = manifest.platform ?? "web";
+  const fold = foldLabel(platform);
+  const prefix = [text(preamble(disciplinesFor(config, platform), config.principles, platform)), text(briefSection(config.briefText))];
   if (decisions.length) prefix.push(text(decisionsSection(decisions)));
   if (extra) prefix.push(text(extra));
   for (const s of manifest.shots) {
-    prefix.push(text(`Screenshot: ${s.route} at ${s.viewport}, above the fold (${s.title})`), await imagePart(s.fold));
+    prefix.push(text(`Screenshot: ${s.route} at ${s.viewport}, ${fold} (${s.title})`), await imagePart(s.fold));
   }
   const cached = await client.ensureCache(prefix, `ui-critic ${manifest.label}`);
   const viewports = manifestViewports(manifest);
-  const PAGE = pageSchema(viewports);
-  const OVERALL = overallSchema(viewports);
+  const PAGE = pageSchema(viewports, platform);
+  const OVERALL = overallSchema(viewports, platform);
   const thoughtLog = [];
   const done = await loadPartial(dir, manifest, config.model);
   const partialPath = path.join(dir, PARTIAL_FILE);
@@ -283,17 +385,13 @@ export async function critique({ dir, config }) {
   const reviewPage = async (route, shots, inPrefix) => {
     const parts = inPrefix ? [] : [...prefix];
     if (!inPrefix) {
-      for (const s of shots) parts.push(text(`Screenshot: ${route} at ${s.viewport}, above the fold (${s.title})`), await imagePart(s.fold));
+      for (const s of shots) parts.push(text(`Screenshot: ${route} at ${s.viewport}, ${fold} (${s.title})`), await imagePart(s.fold));
     }
-    parts.push(
-      text(
-        `## Task\nReview ${shots[0].scenario ? `the state "${shots[0].scenario}" of the page ${shots[0].path}` : `the page ${route}`} ("${shots[0].title}")${shots[0].scenario ? `, captured after these steps: ${(shots[0].steps ?? []).join("; ") || "none"}${shots[0].stepError ? ` (a step failed: ${shots[0].stepError})` : ""}. Judge the state the interaction produced: the feedback, the affordance, what changed and whether it is clear` : ""}${shots[0].auth ? ". The visitor is signed in." : ""}. You already have its above-the-fold capture per viewport; here is the full-page capture per viewport (the whole scroll) and the measured facts. Full-page captures omit bars fixed to the bottom of the viewport (a sticky buy bar, a tab bar): judge those from the first-screen capture, and never report them as covering the footer. Name the page's real strengths first, then list findings, then account for every design discipline in coverage, then anything you still need in requests. Set page to "${route}".`,
-      ),
-    );
+    parts.push(text(pageTask(route, shots, platform)));
     for (const s of shots) {
-      parts.push(text(`Screenshot: ${route} at ${s.viewport}, full page`), await imagePart(s.full));
+      for (const img of detailImages(s)) parts.push(text(`Screenshot: ${route} at ${s.viewport}, ${img.label}`), await imagePart(img.file));
       const audit = await readAudit(s);
-      if (audit) parts.push(text(`Measured facts for ${route} at ${s.viewport} (JSON): ${auditForPrompt(audit)}`));
+      if (audit) parts.push(text(`Measured facts for ${route} at ${s.viewport} (JSON): ${auditForPrompt(audit, isNative(platform) ? 6000 : 4000)}`));
     }
     const { data, thoughts } = await client.generateJSON({ parts, schema: PAGE, op: `page:${route}` });
     const slug = routeSlug(route);
@@ -303,6 +401,9 @@ export async function critique({ dir, config }) {
     data.requests = data.requests ?? [];
     data.coverage = data.coverage ?? [];
     const page = { route, ...data, withheld, audits: {} };
+    const stepWarnings = Array.from(new Set(shots.flatMap((s) => s.stepWarnings ?? [])));
+    if (stepWarnings.length) page.stepWarnings = stepWarnings;
+    if (shots[0].stepError) page.stepError = shots[0].stepError;
     for (const s of shots) {
       const audit = await readAudit(s);
       if (audit) page.audits[s.viewport] = audit;
@@ -353,11 +454,7 @@ export async function critique({ dir, config }) {
       .slice(0, 60)
       .join(" | ");
     const parts = cached ? [] : [...prefix];
-    parts.push(
-      text(
-        `## Task\nUsing the first screen of every page at every viewport, judge the whole site: consistency of type scale, spacing rhythm, components and tone across pages; whether a redesign is warranted or targeted fixes suffice (revamp_needed); and the five changes with the highest impact for the least effort across the site. Keep consistency_findings to genuine cross-page patterns (at most six) and do not repeat per-page findings. List anything you still need in requests. Per-page findings already recorded: ${seen}`,
-      ),
-    );
+    parts.push(text(siteTask(platform, seen, manifest.launchErrors ?? [])));
 
     let overall;
     let siteError = null;
@@ -385,8 +482,10 @@ export async function critique({ dir, config }) {
     const result = {
       tool: "ui-critic",
       model: config.model,
+      platform,
       label: manifest.label,
       base: manifest.base,
+      ...(manifest.launchErrors?.length ? { launchErrors: manifest.launchErrors } : {}),
       reviewedAt: new Date().toISOString(),
       overall,
       pages,

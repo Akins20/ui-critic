@@ -1,9 +1,11 @@
 # ui-critic
 
 A second pair of eyes for a UI. Capture screenshots and measured facts from a running
-site, get a ranked visual critique from Gemini or OpenAI that judges against your product's
-purpose and audience across every design discipline, triage it, ship the fixes, and verify
-with a before/after comparison.
+site or app, get a ranked visual critique from Gemini or OpenAI that judges against your
+product's purpose and audience across every design discipline, triage it, ship the fixes,
+and verify with a before/after comparison. Websites are captured in a browser, Android
+apps on an emulator or device, iOS apps in the Simulator, and anything else from
+screenshots you already have.
 
 It exists so one coding agent can ask another model for design review: Claude Code does the
 building and the judgement, Gemini does the looking. It works just as well for a human at a
@@ -22,6 +24,14 @@ ui-critic verify --before ui-critic-out/before --base http://localhost:3000
 ```
 
 The package is `@akins20/ui-critic` on npm; the command it installs is `ui-critic`.
+
+For an Android app:
+
+```bash
+ui-critic init --platform android --package com.example.app
+ui-critic devices                              # pick the emulator or device; more than one needs --serial
+ui-critic run --label before --serial emulator-5554
+```
 
 ## Which model looks
 
@@ -114,6 +124,75 @@ signs in with credentials it reads **by variable name** from the environment or 
 yourself. When the credentials are missing the signed-in pages are skipped and the report
 says so under "Not captured", instead of quietly reviewing a login redirect.
 
+## Apps: Android, iOS and screenshots
+
+Set `"platform": "android"` (or `--platform android`) and the capture runs on an
+emulator or a device over adb instead of in a browser. It works for any Android app:
+Kotlin or Java, Compose or Views, React Native and Expo, Flutter. adb is found in the
+Android SDK the way Android Studio finds it (`ANDROID_HOME`, then the usual SDK folder,
+then the PATH; `ADB` or `android.adb` names it outright).
+
+```json
+{
+  "platform": "android",
+  "android": { "package": "com.example.app", "serial": "emulator-5554", "scrollFrames": 3 },
+  "routes": ["launch", "myapp://plans"],
+  "viewports": { "phone": {}, "phone-dark-large": { "night": true, "fontScale": 1.3 } },
+  "scenarios": [
+    { "name": "shop", "steps": [{ "click": "desc=Shop" }] },
+    { "name": "filters", "steps": [{ "click": "desc=Shop" }, { "click": "desc=Filter" }, { "wait": 400 }] }
+  ]
+}
+```
+
+- **Routes** are `launch` (the app's first screen) or a deep link. Each one is captured
+  from a cold start, so screens never inherit each other's state. App data is never
+  cleared: sign in on the device yourself and the session survives every capture.
+- **Scenarios** use the web vocabulary where it carries over (`click`, `fill`, `press`,
+  `wait`, `waitFor`, `goto` with a deep link) plus `longPress`, `swipe`, `scroll` (in dp)
+  and `hideKeyboard`. Selectors are `text=`, `desc=` (content description), `id=`
+  (resource id), `class=` and `hint=`. Every step is checked: a target that is not on
+  screen fails with the list of what is, and a step that changed nothing on screen is
+  flagged, and the critic is told the intended state may not have been reached instead
+  of reviewing a screen that never changed.
+- **Viewports** are variants of the one device: `night` (dark theme) and `fontScale`
+  (the system font size). A light and a dark, large-text pass catches truncation and
+  contrast problems a default capture never shows.
+- **Scrolling screens** are captured as overlapping frames: the list is dragged without
+  a fling, frame by frame, until it stops moving or `scrollFrames` is reached.
+- **Measured facts** come from the accessibility hierarchy and the pixels: touch
+  targets in dp (under 48dp, the Material minimum, and under 24dp), controls a screen
+  reader would announce without a name, images without a description, and text contrast
+  measured from the screenshot (text under a floating bar or over a busy background is
+  counted, not guessed). Runtime facts: crashes (Java, Kotlin and native), ANRs, the app
+  leaving the foreground, and new error log lines, with the errors every plain launch
+  prints listed once for the run instead of blamed on each screen. Frame timing is
+  reported from physical devices only; an emulator's software rendering makes any app
+  look janky.
+- **The device is put back.** Animations are turned off and the status bar frozen (a
+  fixed clock, no notifications) so before and after captures compare cleanly; the
+  original settings are written to a restore file first and restored at the end, on
+  Ctrl+C, and by the next run if one was killed. With more than one device connected
+  and no `serial`, the capture refuses instead of guessing, so a personal phone is never
+  used by accident.
+
+`ui-critic inspect --serial <id>` lists what is on the device's screen right now, each
+element with a selector that names it uniquely, its size in dp and what the audit would
+say about it, so scenarios are written from facts rather than guesses. It only reads.
+
+**iOS** (`"platform": "ios"`, `ios.bundleId`, experimental, macOS only) drives the
+Simulator through `xcrun simctl`: routes are `launch` or deep links, scenarios can open
+more deep links and wait, and viewports set `appearance` (light or dark) and
+`contentSize` (Dynamic Type). The status bar is frozen at 9:41 and every setting is put
+back. Taps need a UI driver the tool does not ship yet. It has been tested against a
+simulated simctl, not a real Simulator.
+
+**Screenshots you already have** (an iOS build, Figma exports, a Flutter desktop app, a
+competitor's screens): `ui-critic run --from-images <dir> --label before` builds the
+capture from a folder. Name files `<screen>.<viewport>.png`; `<screen>.<viewport>.2.png`
+is a second scroll frame, and without a viewport the shape decides (tall is a phone,
+wide a desktop).
+
 ## What the critic can ask for
 
 Each page review and the site review end with `requests`: pages, files, answers or
@@ -153,6 +232,8 @@ triage instead of obeying.
 | `run --base url --label name` | capture then critique |
 | `verify --before dir --base url` | capture "after" then compare, in one step |
 | `cost [--out dir]` | total the usage ledger per run at today's prices |
+| `devices` | list connected Android devices and emulators, and booted iOS simulators |
+| `inspect [--serial id]` | list what is on an Android screen now, with a selector for each element |
 
 `--json` prints a machine-readable summary to stdout (for an agent to parse); the full
 reports are always written next to the screenshots. `--fail-on measured` makes `compare`
@@ -203,7 +284,8 @@ Environment: `GEMINI_API_KEY` or `OPENAI_API_KEY` (one is required), `GEMINI_MOD
 `UI_CRITIC_BRIEF`, `UI_CRITIC_CONCURRENCY`. Flags: `--provider`, `--model`,
 `--thinking-level`, `--include-thoughts`, `--no-cache`, `--ttl`, `--temperature`,
 `--routes`, `--out`, `--brief`, `--context`, `--answers`, `--decisions`,
-`--follow-requests`, `--max-pages`, `--concurrency`, `--no-confirm`, `--config`.
+`--follow-requests`, `--max-pages`, `--concurrency`, `--no-confirm`, `--config`,
+`--platform`, `--package`, `--serial`, `--bundle-id`, `--udid`, `--from-images`.
 
 ### Thinking
 

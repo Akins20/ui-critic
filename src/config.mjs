@@ -2,6 +2,78 @@ import { readFile, writeFile, mkdir, access } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { stepProblems, normalizeRoute } from "./steps.mjs";
+import { nativeStepProblems, nativeRouteProblems } from "./native/steps.mjs";
+
+/** What a capture can be of: a website, an Android app, an iOS app. */
+export const PLATFORMS = ["web", "android", "ios"];
+
+/**
+ * Android capture knobs. package is the application id; serial picks the device
+ * when more than one is connected (the tool refuses to guess); adb is found in the
+ * SDK when not given. coldStart force-stops the app before each screen so every
+ * capture starts clean (app data is never cleared, so a signed-in session stays);
+ * cleanStatusBar freezes the clock and icons, disableAnimations turns the system
+ * animation scales off, and both are restored afterwards. scrollFrames is how many
+ * overlapping frames to take of a screen that scrolls, the first screen included.
+ */
+export const ANDROID_DEFAULTS = {
+  package: undefined,
+  activity: undefined,
+  serial: undefined,
+  adb: undefined,
+  envFile: undefined,
+  coldStart: true,
+  cleanStatusBar: true,
+  disableAnimations: true,
+  scrollFrames: 3,
+  settleTimeoutMs: 8000,
+  waitForTimeoutMs: 30_000,
+};
+
+/** iOS Simulator capture knobs (experimental): the app's bundle id and the simulator's udid. */
+export const IOS_DEFAULTS = {
+  bundleId: undefined,
+  udid: undefined,
+  cleanStatusBar: true,
+  settleMs: 1500,
+};
+
+/** A native capture's viewports are variants of the one device; the default is the device as it is. */
+export const NATIVE_VIEWPORTS = { phone: {} };
+
+/** The disciplines for an app: the web list with platform conventions in place of breakpoints. */
+export const NATIVE_DISCIPLINES = [
+  "layout and grid: alignment, margins and keylines, balance, use of the screen",
+  "spacing and rhythm: padding consistency, grouping by proximity, list density",
+  "typography: type scale, hierarchy, weights, line length, truncation, scaling with the system font size",
+  "colour and contrast: palette use, emphasis, contrast ratios, light and dark theme parity",
+  "surfaces, dividers and elevation: cards, sheets, dividers, shadows, radii, when a container earns its place",
+  "imagery and iconography: crop, aspect, quality, icon style and meaning, platform icon conventions",
+  "components and states: buttons, fields, chips, switches, lists; pressed, focused, disabled, loading, empty, error",
+  "navigation and wayfinding: app bar, back behaviour, tabs, bottom navigation, where am I and how do I go back",
+  "content and microcopy: clarity, tone, labels, numbers and money formatting",
+  "conversion and primary actions: primary action clarity, friction, order of information",
+  "trust and credibility: authenticity, payment security, permissions asked in context, policies",
+  "motion and feedback: transitions, loading feedback, reduced motion",
+  "accessibility: screen reader labels, touch targets of at least 48dp, contrast, text scaling, focus order",
+  "platform conventions and ergonomics: Material or Human Interface patterns, system bars and insets, gestures, thumb reach, keyboard handling",
+  "consistency across screens: the same thing looks and behaves the same everywhere",
+];
+
+const IOS_CONTENT_SIZES = [
+  "extra-small",
+  "small",
+  "medium",
+  "large",
+  "extra-large",
+  "extra-extra-large",
+  "extra-extra-extra-large",
+  "accessibility-medium",
+  "accessibility-large",
+  "accessibility-extra-large",
+  "accessibility-extra-extra-large",
+  "accessibility-extra-extra-extra-large",
+];
 
 /** Built-in viewports: a common laptop and a common phone (2x for crisp text). */
 export const DEFAULT_VIEWPORTS = {
@@ -73,6 +145,7 @@ export const DEFAULT_PRINCIPLES = [
  * known to neither reports tokens only.
  */
 export const DEFAULTS = {
+  platform: "web",
   base: undefined,
   label: undefined,
   routes: ["/"],
@@ -95,6 +168,9 @@ export const DEFAULTS = {
   generation: { temperature: 0.3, maxOutputTokens: 32768 },
   pricing: {},
   ledger: "usage.jsonl",
+  android: ANDROID_DEFAULTS,
+  ios: IOS_DEFAULTS,
+  fromImages: undefined,
   json: false,
   failOn: undefined,
 };
@@ -155,6 +231,10 @@ export function flagOverrides(flags) {
   if (flags.temperature !== undefined) o.generation = { temperature: Number(flags.temperature) };
   if (flags.json) o.json = true;
   if (flags["fail-on"]) o.failOn = flags["fail-on"];
+  if (flags.platform) o.platform = flags.platform;
+  if (flags.package || flags.serial) o.android = { ...(flags.package ? { package: flags.package } : {}), ...(flags.serial ? { serial: flags.serial } : {}) };
+  if (flags["bundle-id"] || flags.udid) o.ios = { ...(flags["bundle-id"] ? { bundleId: flags["bundle-id"] } : {}), ...(flags.udid ? { udid: flags.udid } : {}) };
+  if (flags["from-images"]) o.fromImages = flags["from-images"];
   return o;
 }
 
@@ -177,23 +257,37 @@ export function validate(cfg) {
   if (cfg.provider !== undefined && !["gemini", "openai"].includes(cfg.provider)) {
     throw new Error("provider must be gemini or openai");
   }
+  if (!PLATFORMS.includes(cfg.platform)) throw new Error(`platform must be one of ${PLATFORMS.join(", ")} (got ${cfg.platform})`);
+  const native = cfg.platform !== "web";
   if (!Array.isArray(cfg.routes) || cfg.routes.length === 0) throw new Error("routes must be a non-empty list");
   for (const entry of cfg.routes) {
     const r = normalizeRoute(entry);
     if (typeof r.path !== "string" || !r.path) throw new Error("every route needs a path");
+    if (native) {
+      const problems = nativeRouteProblems(r.path);
+      if (problems.length) throw new Error(problems.join("; "));
+    }
   }
   if (!Array.isArray(cfg.scenarios)) throw new Error("scenarios must be a list");
   cfg.scenarios.forEach((s, i) => {
     if (!s || typeof s.name !== "string" || !s.name) throw new Error(`scenarios[${i}] needs a name`);
-    if (typeof s.route !== "string" || !s.route) throw new Error(`scenario ${s.name} needs a route`);
-    const problems = stepProblems(s.steps, `scenario ${s.name} steps`);
+    if (native) {
+      const routeProblems = nativeRouteProblems(s.route ?? "launch", `scenario ${s.name} route`);
+      if (routeProblems.length) throw new Error(routeProblems.join("; "));
+    } else if (typeof s.route !== "string" || !s.route) throw new Error(`scenario ${s.name} needs a route`);
+    const problems = native ? nativeStepProblems(s.steps, `scenario ${s.name} steps`, cfg.platform) : stepProblems(s.steps, `scenario ${s.name} steps`);
     if (problems.length) throw new Error(problems.join("; "));
     if (s.viewports !== undefined) {
       if (!Array.isArray(s.viewports) || s.viewports.length === 0) throw new Error(`scenario ${s.name} viewports must be a non-empty list`);
       for (const name of s.viewports) if (!cfg.viewports[name]) throw new Error(`scenario ${s.name} names an unknown viewport ${name}`);
     }
   });
-  if (cfg.auth) {
+  if (cfg.platform === "android") {
+    const a = cfg.android ?? {};
+    if (a.package !== undefined && !/^[a-zA-Z][\w]*(\.[a-zA-Z_][\w]*)+$/.test(a.package)) throw new Error(`android.package ${a.package} is not an application id such as com.example.app`);
+    if (!(Number.isInteger(a.scrollFrames) && a.scrollFrames >= 1 && a.scrollFrames <= 8)) throw new Error("android.scrollFrames must be an integer from 1 to 8");
+  }
+  if (!native && cfg.auth) {
     if (!["form", "storageState"].includes(cfg.auth.mode)) throw new Error("auth.mode must be form or storageState");
     if (cfg.auth.mode === "storageState" && typeof cfg.auth.path !== "string") throw new Error("auth.path is required for storageState");
     if (cfg.auth.mode === "form") {
@@ -207,7 +301,17 @@ export function validate(cfg) {
     throw new Error("viewports must name at least one viewport");
   }
   for (const [name, vp] of Object.entries(cfg.viewports)) {
-    if (!(vp.width > 0 && vp.height > 0)) throw new Error(`viewport ${name} needs a positive width and height`);
+    if (cfg.platform === "android") {
+      if (vp.night !== undefined && typeof vp.night !== "boolean") throw new Error(`viewport ${name}: night must be true or false`);
+      if (vp.fontScale !== undefined && !(typeof vp.fontScale === "number" && vp.fontScale >= 0.5 && vp.fontScale <= 3)) {
+        throw new Error(`viewport ${name}: fontScale must be a number from 0.5 to 3`);
+      }
+    } else if (cfg.platform === "ios") {
+      if (vp.appearance !== undefined && !["light", "dark"].includes(vp.appearance)) throw new Error(`viewport ${name}: appearance must be light or dark`);
+      if (vp.contentSize !== undefined && !IOS_CONTENT_SIZES.includes(vp.contentSize)) {
+        throw new Error(`viewport ${name}: contentSize must be one of ${IOS_CONTENT_SIZES.join(", ")}`);
+      }
+    } else if (!(vp.width > 0 && vp.height > 0)) throw new Error(`viewport ${name} needs a positive width and height`);
   }
   if (!(Number.isInteger(cfg.followRequests.maxPages) && cfg.followRequests.maxPages >= 0)) {
     throw new Error("followRequests.maxPages must be a non-negative integer");
@@ -240,6 +344,13 @@ export async function loadConfig(flags = {}, env = process.env) {
   // otherwise keep the built-in desktop and mobile entries beside them, so a
   // phone-only review still captured a desktop pass.
   if (file.viewports && typeof file.viewports === "object") merged.viewports = file.viewports;
+  // An app is captured on one device, its first screen is its launch screen, and
+  // its disciplines speak of platform conventions rather than breakpoints.
+  if (merged.platform !== "web") {
+    if (!file.viewports) merged.viewports = NATIVE_VIEWPORTS;
+    if (!file.disciplines) merged.disciplines = NATIVE_DISCIPLINES;
+    if (!file.routes && !flags.routes) merged.routes = ["launch"];
+  }
   const cfg = validate(merged);
   cfg.configPath = configPath;
   cfg.briefText = "";
@@ -257,21 +368,33 @@ export async function loadConfig(flags = {}, env = process.env) {
  * Writes a starter ui-critic.config.json (every default spelled out so it can be
  * edited) and a brief from the template, refusing to overwrite either.
  */
-export async function init({ base, cwd = process.cwd() }) {
+export async function init({ base, platform = "web", pkg, cwd = process.cwd() }) {
+  if (!PLATFORMS.includes(platform)) throw new Error(`platform must be one of ${PLATFORMS.join(", ")}`);
   const configPath = path.join(cwd, CONFIG_FILE);
   const briefPath = path.join(cwd, "ui-critic", "brief.md");
   const written = [];
   const exists = async (p) => access(p).then(() => true, () => false);
   if (!(await exists(configPath))) {
-    const starter = merge(DEFAULTS, {
-      base: base ?? "http://localhost:3000",
-      routes: ["/"],
-      hideSelectors: ["nextjs-portal"],
-      pricing: {},
-    });
+    const starter = merge(DEFAULTS, { platform, pricing: {} });
+    if (platform === "web") {
+      starter.base = base ?? "http://localhost:3000";
+      starter.routes = ["/"];
+      starter.hideSelectors = ["nextjs-portal"];
+    } else {
+      // Set, not merged: a merge would keep the web viewports beside the device.
+      starter.routes = ["launch"];
+      starter.viewports = { phone: {}, "phone-dark": platform === "android" ? { night: true } : { appearance: "dark" } };
+      starter.disciplines = NATIVE_DISCIPLINES;
+      if (platform === "android") starter.android = { ...ANDROID_DEFAULTS, package: pkg ?? "com.example.app" };
+      if (platform === "ios") starter.ios = { ...IOS_DEFAULTS, bundleId: pkg ?? "com.example.app" };
+      for (const k of ["base", "hideSelectors", "auth", "followRequests"]) delete starter[k];
+    }
+    if (platform !== "android") delete starter.android;
+    if (platform !== "ios") delete starter.ios;
     delete starter.label;
     delete starter.json;
     delete starter.failOn;
+    delete starter.fromImages;
     await writeFile(configPath, JSON.stringify(starter, null, 2) + "\n");
     written.push(configPath);
   }

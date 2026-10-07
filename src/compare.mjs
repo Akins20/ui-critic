@@ -2,7 +2,8 @@ import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { imagePart, text } from "./parts.mjs";
 import { createClient } from "./provider.mjs";
-import { preamble, briefSection } from "./critique.mjs";
+import { preamble, briefSection, disciplinesFor } from "./critique.mjs";
+import { allImages, nouns } from "./shots.mjs";
 import { renderCompare } from "./report.mjs";
 import { auditForPrompt } from "./audit.mjs";
 import { requireBrief, contextSections } from "./brief.mjs";
@@ -134,7 +135,9 @@ export async function compare({ before, after, config }) {
   });
   const extra = await contextSections(config);
   const decisions = await loadDecisions(config);
-  const prefix = [text(preamble(config.disciplines, config.principles)), text(briefSection(config.briefText))];
+  const platform = ma.platform ?? mb.platform ?? "web";
+  const { item } = nouns(platform);
+  const prefix = [text(preamble(disciplinesFor(config, platform), config.principles, platform)), text(briefSection(config.briefText))];
   if (decisions.length) prefix.push(text(decisionsSection(decisions) + "\nDo not list a settled decision as regressed or still open."));
   if (extra) prefix.push(text(extra));
   const confirm = config.compare?.confirmRegressions !== false;
@@ -157,16 +160,13 @@ export async function compare({ before, after, config }) {
   const checkpoint = serialWriter(() => writeFile(partialPath, JSON.stringify({ afterCapturedAt: ma.capturedAt, results }, null, 2)));
   try {
     const compared = await runPool(pending, config.concurrency ?? 1, async ({ a, b }) => {
-      const pairParts = [
-        text("BEFORE, above the fold"),
-        await imagePart(b.fold),
-        text("BEFORE, full page"),
-        await imagePart(b.full),
-        text("AFTER, above the fold"),
-        await imagePart(a.fold),
-        text("AFTER, full page"),
-        await imagePart(a.full),
-      ];
+      const pairParts = [];
+      for (const [side, shot] of [["BEFORE", b], ["AFTER", a]]) {
+        for (const img of allImages(shot)) {
+          const label = img.label === "first screen" && !shot.frames ? "above the fold" : img.label;
+          pairParts.push(text(`${side}, ${label}`), await imagePart(img.file));
+        }
+      }
       const [auditBefore, auditAfter] = await Promise.all([readAudit(b), readAudit(a)]);
       if (auditBefore) pairParts.push(text(`Measured facts BEFORE (JSON): ${auditForPrompt(auditBefore, 2500)}`));
       if (auditAfter) pairParts.push(text(`Measured facts AFTER (JSON): ${auditForPrompt(auditAfter, 2500)}`));
@@ -174,7 +174,7 @@ export async function compare({ before, after, config }) {
       const parts = cached ? [] : [...prefix];
       parts.push(
         text(
-          `## Task\nCompare the page ${a.route} at ${a.viewport} before and after a round of changes. Only report differences you can actually see or measure; identical captures are "same". Cite the element for every point.`,
+          `## Task\nCompare the ${item} ${a.route} at ${a.viewport} before and after a round of changes. Only report differences you can actually see or measure; identical captures are "same". Cite the element for every point.`,
         ),
         ...pairParts,
       );

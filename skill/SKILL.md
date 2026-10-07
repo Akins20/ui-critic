@@ -1,6 +1,6 @@
 ---
 name: ui-critic
-description: Get an independent visual critique of a web UI from Gemini (screenshots and measured facts in, ranked findings and requests out), triage it, implement what survives, and verify with a before/after comparison. Use when asked to review, critique, polish or revamp a UI, to get a second opinion on visual design, or before shipping a user-facing page.
+description: Get an independent visual critique of a web UI, an Android or iOS app, or a set of screenshots from Gemini or OpenAI (screenshots and measured facts in, ranked findings and requests out), triage it, implement what survives, and verify with a before/after comparison. Use when asked to review, critique, polish or revamp a UI or an app's screens, to get a second opinion on visual design, or before shipping a user-facing page or screen.
 ---
 
 # UI critic: a second pair of eyes, then judgement
@@ -17,7 +17,27 @@ not see the code or the product decisions, only what you give it.
 - The CLI: `npx @akins20/ui-critic` (or `npm i -g @akins20/ui-critic`, which installs the `ui-critic` command), or from a checkout `node <absolute path>/ui-critic/bin/ui-critic.mjs`.
 - For capture: Playwright with Chromium in the project (`@playwright/test` counts). Without it,
   point `critique` at screenshots taken another way, described by a `manifest.json`.
-- A URL to review: production, a preview deployment, or the local dev server.
+- A URL to review: production, a preview deployment, or the local dev server. For an
+  Android app: an emulator or device with the app installed (adb is found in the SDK);
+  for iOS: a booted Simulator on macOS (experimental). For anything else: a folder of
+  screenshots (`--from-images`).
+
+## Apps (Android, iOS) and screenshots
+- `ui-critic init --platform android --package <id>` writes a starter with a light and a
+  dark pass. `ui-critic devices` lists what is connected. If a physical phone is connected
+  beside an emulator, use the emulator's `--serial` and do not capture the phone unless
+  the user says so: the tool changes settings during a capture and screenshots whatever
+  is on screen.
+- Write scenarios from `ui-critic inspect --serial <id>`, which lists every element on the
+  current screen with a unique selector; never guess selectors or tap coordinates.
+- Signed-in screens: the user signs in on the device; app data is never cleared, so the
+  session survives. Never type a password into the device yourself.
+- Keep a dark, large-text viewport (`{ "night": true, "fontScale": 1.3 }`): it finds
+  truncation and contrast failures a default pass misses.
+- Read step warnings: a step that changed nothing means the capture may not show the
+  intended state, so fix the scenario before trusting findings about that screen.
+- Touch-target sizes are element bounds; React Native `hitSlop` or a `TouchDelegate`
+  enlarges the real touch area invisibly. Check the code before resizing a visual.
 
 ## The loop
 1. **Bootstrap.** `ui-critic init --base <url>` writes `ui-critic.config.json` (every default

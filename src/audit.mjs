@@ -139,9 +139,33 @@ export function auditScript() {
   };
 }
 
+/** The one-line summary of an app screen's facts: targets, labels, contrast, runtime. */
+function nativeSummary(audit) {
+  const i = audit.interactive ?? {};
+  const tc = audit.textContrast ?? {};
+  const parts = [];
+  if (audit.device?.model) parts.push(`${audit.device.model}${audit.variant?.night ? ", dark" : ""}${audit.variant?.fontScale && audit.variant.fontScale !== 1 ? `, font ${audit.variant.fontScale}x` : ""}`);
+  if (audit.interactive) {
+    parts.push(`${i.under48dpCount ?? 0} of ${i.total ?? 0} targets under 48dp (${i.under24dpCount ?? 0} under 24dp)`, `${i.unlabeledCount ?? 0} unlabelled controls`);
+  }
+  if (audit.textContrast) parts.push(`${tc.below4_5 ?? 0}/${tc.sampled ?? 0} text samples below 4.5:1`);
+  if (audit.images) parts.push(`${audit.images.withoutDescription ?? 0} images without a description`);
+  if (audit.image) parts.push(`${audit.image.width}x${audit.image.height}px`);
+  const rt = audit.runtime;
+  if (rt) {
+    parts.push(`${rt.crashes?.length ?? 0} crashes`, `${rt.errors?.length ?? 0} new error log lines`);
+    if (rt.anr) parts.push("an ANR");
+    if (rt.foreground) parts.push(`${rt.foreground} on top`);
+    if (rt.frameStats?.jankyPercent != null) parts.push(`${rt.frameStats.jankyPercent}% janky frames`);
+  }
+  if (audit.dumpError) parts.push(`hierarchy unreadable: ${audit.dumpError}`);
+  return parts.join(", ");
+}
+
 /** One line per page for the report: the facts a reader most wants at a glance. */
 export function auditSummary(audit) {
   if (!audit || audit.error) return audit?.error ? `audit failed: ${audit.error}` : "";
+  if (audit.platform && audit.platform !== "web") return nativeSummary(audit);
   const parts = [
     `base ${audit.baseFontSize}`,
     `${audit.fonts.body} body${audit.fonts.h2 && audit.fonts.h2 !== audit.fonts.body ? `, ${audit.fonts.h2} headings` : ""}`,

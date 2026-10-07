@@ -6,10 +6,10 @@ import { readFile } from "node:fs/promises";
  * these into its own wire shape.
  */
 
-/** Builds an inline image part from a PNG or JPEG file. */
+/** Builds an inline image part from a PNG, JPEG or WebP file. */
 export async function imagePart(file) {
   const data = await readFile(file);
-  const mimeType = /\.jpe?g$/i.test(file) ? "image/jpeg" : "image/png";
+  const mimeType = /\.jpe?g$/i.test(file) ? "image/jpeg" : /\.webp$/i.test(file) ? "image/webp" : "image/png";
   return { inlineData: { mimeType, data: data.toString("base64") } };
 }
 

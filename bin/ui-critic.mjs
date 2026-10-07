@@ -10,11 +10,18 @@ import { costReport, renderCostReport } from "../src/cost.mjs";
 import { gateHits } from "../src/compare.mjs";
 import { listModels } from "../src/provider.mjs";
 import { resolvePrice, describePrice, PRICING_AS_OF, PRICING_SOURCE } from "../src/pricing.mjs";
+import { captureAndroid } from "../src/native/android.mjs";
+import { captureIOS, parseSimulators } from "../src/native/ios.mjs";
+import { captureFromImages } from "../src/images.mjs";
+import { createRunner, findAdb, parseDevices, pickDevice, androidDevice, deviceInfo } from "../src/native/adb.mjs";
+import { parseHierarchy, foregroundPackage } from "../src/native/hierarchy.mjs";
+import { inspectScreen, renderInspect } from "../src/native/inspect.mjs";
+import { parseActivity } from "../src/native/android.mjs";
 
 const HELP = `ui-critic: a second pair of eyes on a UI, for coding agents and humans.
 
 Commands
-  init       [--base <url>]                          write a starter ui-critic.config.json and brief
+  init       [--base <url>] [--platform android --package <id>]   write a starter config, brief and decisions file
   models     [--filter flash]                        list the provider's vision models, with prices
   capture    --base <url> --label <name>             screenshot and measure every route at every viewport
   critique   --in <capture dir>                      ranked findings, scores, priorities, the critic's requests
@@ -22,6 +29,15 @@ Commands
   run        --base <url> --label <name>             capture then critique, in one go
   verify     --before <dir> --base <url> [--label after]   capture "after" then compare
   cost       [--out <dir>]                           total the usage ledger per run at today's prices
+  devices                                            list connected Android devices and booted iOS simulators
+  inspect    [--serial <id>]                         list what is on an Android screen now, with selectors
+
+Apps and screenshots
+  --platform android --package <application id>     capture an Android app on an emulator or device over adb
+  --platform ios --bundle-id <id>                   capture an iOS Simulator app (experimental, macOS only)
+  --serial <id> | --udid <id>                       which device or simulator, when more than one is connected
+  --from-images <dir>                               build the capture from screenshots you already have
+                                                    (name them screen.viewport.png; screen.viewport.2.png is a scroll frame)
 
 The brief (ui-critic/brief.md by default) is required for critique, compare, run and
 verify: it tells the critic what the product is for and who it is for.
@@ -41,7 +57,8 @@ Options (flags win over env, env over ui-critic.config.json, file over defaults)
                           measured = a confirmed regression backed by a measured fact, the CI-safe choice)
 
 Environment: GEMINI_API_KEY or OPENAI_API_KEY (never stored), GEMINI_MODEL, UI_CRITIC_PROVIDER,
-UI_CRITIC_THINKING, UI_CRITIC_CACHE=0, UI_CRITIC_OUT, UI_CRITIC_BRIEF, UI_CRITIC_CONCURRENCY.
+UI_CRITIC_THINKING, UI_CRITIC_CACHE=0, UI_CRITIC_OUT, UI_CRITIC_BRIEF, UI_CRITIC_CONCURRENCY,
+ANDROID_HOME or ADB (where adb is, when it is not in the usual SDK folder).
 `;
 
 const OPTIONS = {
@@ -71,6 +88,12 @@ const OPTIONS = {
   temperature: { type: "string" },
   json: { type: "boolean" },
   "fail-on": { type: "string" },
+  platform: { type: "string" },
+  package: { type: "string" },
+  serial: { type: "string" },
+  "bundle-id": { type: "string" },
+  udid: { type: "string" },
+  "from-images": { type: "string" },
   help: { type: "boolean", short: "h" },
 };
 
@@ -101,9 +124,52 @@ function gate(config, results) {
 }
 
 async function doCapture(config, label) {
-  if (!config.base) throw new Error("capture needs --base <url> (or base in the config file)");
   if (!label) throw new Error("capture needs --label <name>, for example before or after");
+  if (config.fromImages) return captureFromImages({ from: config.fromImages, out: config.out, label });
+  if (config.platform === "android") return captureAndroid({ ...config, label });
+  if (config.platform === "ios") return captureIOS({ ...config, label });
+  if (!config.base) throw new Error("capture needs --base <url> (or base in the config file)");
   return capture({ ...config, label });
+}
+
+/** What a capture produced, in words: screenshots of pages, or screens of an app. */
+function captured(manifest) {
+  const what = manifest.platform && manifest.platform !== "web" ? `${manifest.shots.length} screens` : `${manifest.shots.length} screenshots`;
+  return `captured ${what} into ${manifest.dir}`;
+}
+
+/** Connected Android devices (when adb is found) and booted iOS simulators (on macOS). */
+async function doDevices(config) {
+  const run = createRunner({ timeoutMs: 20_000 });
+  const out = { android: [], ios: [], notes: [] };
+  try {
+    const adb = await findAdb({ configured: config.android?.adb });
+    out.android = parseDevices((await run(adb, ["devices", "-l"])).toString("utf8"));
+  } catch (err) {
+    out.notes.push(`Android: ${err.message.includes("ENOENT") ? "adb not found (install Android platform-tools, or set ANDROID_HOME or ADB)" : err.message}`);
+  }
+  if (process.platform === "darwin") {
+    try {
+      out.ios = parseSimulators((await run("xcrun", ["simctl", "list", "devices", "booted", "-j"])).toString("utf8"));
+    } catch (err) {
+      out.notes.push(`iOS: ${err.message}`);
+    }
+  }
+  return out;
+}
+
+/** What is on the chosen Android device's screen right now, read-only. */
+async function doInspect(config) {
+  const run = createRunner();
+  const adb = await findAdb({ configured: config.android?.adb });
+  const chosen = pickDevice(parseDevices((await run(adb, ["devices", "-l"])).toString("utf8")), config.android?.serial);
+  const dev = androidDevice({ adb, serial: chosen.serial, run });
+  const [info, xml, focus] = await Promise.all([deviceInfo(dev), dev.dump(), dev.focusedWindow()]);
+  const { nodes } = parseHierarchy(xml);
+  const activity = parseActivity(focus);
+  const rows = inspectScreen(nodes, info);
+  const header = `${chosen.serial} (${info.model}, Android ${info.android}, ${info.screen.width}x${info.screen.height} at ${info.density}dpi = ${info.pxPerDp}px per dp): ${activity ?? foregroundPackage(nodes) ?? "unknown screen"}`;
+  return { header, rows, activity, device: { serial: chosen.serial, ...info } };
 }
 
 async function doCritique(config, dir) {
@@ -162,12 +228,30 @@ async function main() {
     return;
   }
   if (cmd === "init") {
-    const written = await init({ base: flags.base });
+    const written = await init({ base: flags.base, platform: flags.platform ?? "web", pkg: flags.package ?? flags["bundle-id"] });
     process.stdout.write(written.length ? `wrote:\n  ${written.join("\n  ")}\nFill in the brief (Product and Audience at least) before running a critique.\n` : "nothing to do: config and brief already exist\n");
     return;
   }
   const config = await loadConfig(flags);
   switch (cmd) {
+    case "devices": {
+      const found = await doDevices(config);
+      if (config.json) process.stdout.write(JSON.stringify(found, null, 2) + "\n");
+      else {
+        const lines = [];
+        for (const d of found.android) lines.push(`android  ${d.serial.padEnd(20)} ${d.state.padEnd(12)} ${d.model ?? ""}${d.emulator ? " (emulator)" : ""}`);
+        for (const s of found.ios) lines.push(`ios      ${s.udid.padEnd(38)} ${s.name} (${s.runtime})`);
+        if (!lines.length) lines.push("no devices or simulators found");
+        process.stdout.write([...lines, ...found.notes].join("\n") + "\n");
+      }
+      return;
+    }
+    case "inspect": {
+      const result = await doInspect(config);
+      if (config.json) process.stdout.write(JSON.stringify(result, null, 2) + "\n");
+      else process.stdout.write(renderInspect(result.rows, result.header) + "\n");
+      return;
+    }
     case "cost": {
       const ledger = path.join(config.out, config.ledger);
       const report = await costReport(ledger, config.pricing);
@@ -190,7 +274,7 @@ async function main() {
     }
     case "capture": {
       const manifest = await doCapture(config, config.label);
-      emit(config, `captured ${manifest.shots.length} screenshots into ${manifest.dir}`, { command: "capture", dir: manifest.dir, shots: manifest.shots.length });
+      emit(config, captured(manifest), { command: "capture", platform: manifest.platform ?? "web", dir: manifest.dir, shots: manifest.shots.length });
       return;
     }
     case "critique": {
@@ -205,14 +289,14 @@ async function main() {
     }
     case "run": {
       const manifest = await doCapture(config, config.label);
-      process.stderr.write(`captured ${manifest.shots.length} screenshots into ${manifest.dir}\n`);
+      process.stderr.write(`${captured(manifest)}\n`);
       await doCritique(config, manifest.dir);
       return;
     }
     case "verify": {
-      if (!flags.before) throw new Error("verify needs --before <capture dir> and --base <url>");
+      if (!flags.before) throw new Error("verify needs --before <capture dir>, and --base <url> (or --platform, or --from-images) for the after capture");
       const manifest = await doCapture(config, config.label ?? "after");
-      process.stderr.write(`captured ${manifest.shots.length} screenshots into ${manifest.dir}\n`);
+      process.stderr.write(`${captured(manifest)}\n`);
       await doCompare(config, flags.before, manifest.dir);
       return;
     }
