@@ -4,6 +4,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { auditScript } from "./audit.mjs";
 import { stylesScript } from "./styles.mjs";
+import { sweepPage } from "./sweep.mjs";
 import { runSteps, readEnvFile, normalizeRoute } from "./steps.mjs";
 
 const PLAYWRIGHT_PACKAGES = ["playwright", "@playwright/test", "playwright-core"];
@@ -153,7 +154,7 @@ export async function instrumentPage(page) {
 }
 
 /** Screenshots and audits the page as it is now, under the given slug and label. */
-async function shoot({ page, dir, slug, viewportName, route, label, extra = {}, runtime = null }) {
+async function shoot({ page, dir, slug, viewportName, route, label, extra = {}, runtime = null, sweep = null }) {
   const fold = path.join(dir, `${slug}.${viewportName}.fold.png`);
   const full = path.join(dir, `${slug}.${viewportName}.full.jpg`);
   const audit = path.join(dir, `${slug}.${viewportName}.audit.json`);
@@ -190,7 +191,6 @@ async function shoot({ page, dir, slug, viewportName, route, label, extra = {}, 
     facts = { error: err.message };
   }
   if (runtime) facts.runtime = await runtime.read();
-  await writeFile(audit, JSON.stringify(facts, null, 2));
   // The style inventory for the design-system lint, kept apart from the audit so the
   // critic's copy of the facts stays short.
   let styles = null;
@@ -201,6 +201,10 @@ async function shoot({ page, dir, slug, viewportName, route, label, extra = {}, 
   } catch {
     styles = null;
   }
+  // Hover and keyboard focus, measured last: after the screenshots, the facts and the
+  // runtime record, so moving the pointer and the focus cannot change any of them.
+  if (sweep) facts.interaction = await sweepPage(page, sweep);
+  await writeFile(audit, JSON.stringify(facts, null, 2));
   return { route: label, path: route, url: page.url(), viewport: viewportName, title: await page.title(), fold, full, audit, styles, hiddenFixed, ...extra };
 }
 
@@ -209,7 +213,7 @@ async function shoot({ page, dir, slug, viewportName, route, label, extra = {}, 
  * full-page JPEG and the measured audit. Shared by the initial capture and by the
  * follow-up capture of pages the critic asks for.
  */
-export async function captureRoute({ page, base, route, viewportName, dir, hideSelectors, auth = false }) {
+export async function captureRoute({ page, base, route, viewportName, dir, hideSelectors, auth = false, sweep = null }) {
   const runtime = await instrumentPage(page);
   runtime.reset();
   const url = new URL(route, base).toString();
@@ -219,7 +223,16 @@ export async function captureRoute({ page, base, route, viewportName, dir, hideS
     await page.goto(url, { waitUntil: "load", timeout: 90_000 });
   }
   await settle(page, hideSelectors);
-  return shoot({ page, dir, slug: routeSlug(route), viewportName, route, label: route, extra: { auth }, runtime });
+  return shoot({ page, dir, slug: routeSlug(route), viewportName, route, label: route, extra: { auth }, runtime, sweep });
+}
+
+/**
+ * The sweep settings for a viewport: hover and keyboard on a viewport with a mouse;
+ * none on a touch viewport, which has neither hover nor, usually, a keyboard.
+ */
+export function sweepFor(sweep, vp) {
+  if (!sweep || sweep.enabled === false || vp.isMobile) return null;
+  return { hover: true, maxHover: sweep.maxHover ?? 20, maxTabs: sweep.maxTabs ?? 60 };
 }
 
 /**
@@ -313,7 +326,7 @@ export function scenariosAt(scenarios, viewportName) {
  * reason is recorded. Motion is reduced so carousels and entrance animations do
  * not smear the capture.
  */
-export async function capture({ base, routes, scenarios = [], auth = null, viewports, out, label, hideSelectors = [] }) {
+export async function capture({ base, routes, scenarios = [], auth = null, viewports, out, label, hideSelectors = [], sweep = null }) {
   const playwright = await loadPlaywright();
   const dir = path.join(out, label);
   await mkdir(dir, { recursive: true });
@@ -327,7 +340,7 @@ export async function capture({ base, routes, scenarios = [], auth = null, viewp
       const anon = await openContext(browser, vp);
       const page = await anon.newPage();
       for (const entry of entries.filter((e) => !e.auth)) {
-        shots.push(await captureRoute({ page, base, route: entry.path, viewportName, dir, hideSelectors }));
+        shots.push(await captureRoute({ page, base, route: entry.path, viewportName, dir, hideSelectors, sweep: sweepFor(sweep, vp) }));
         process.stderr.write(`  ${viewportName.padEnd(8)} ${entry.path}\n`);
       }
       await anon.close();
@@ -353,7 +366,7 @@ export async function capture({ base, routes, scenarios = [], auth = null, viewp
           const session = await context.storageState();
           const authPage = await context.newPage();
           for (const entry of authEntries) {
-            shots.push(await captureRoute({ page: authPage, base, route: entry.path, viewportName, dir, hideSelectors, auth: true }));
+            shots.push(await captureRoute({ page: authPage, base, route: entry.path, viewportName, dir, hideSelectors, auth: true, sweep: sweepFor(sweep, vp) }));
             process.stderr.write(`  ${viewportName.padEnd(8)} ${entry.path} (signed in)\n`);
           }
           await context.close();

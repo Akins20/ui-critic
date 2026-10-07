@@ -89,6 +89,7 @@ Options (flags win over env, env over ui-critic.config.json, file over defaults)
   --decisions <file>      settled decisions the critic must not reopen (default ui-critic/decisions.md)
   --concurrency <1..8>    calls in flight at once (default 3)
   --no-confirm            skip the second look that confirms each reported regression
+  --no-sweep              skip the hover and keyboard sweep of each page (on by default for desktop viewports)
   --provider gemini|openai   the critic (default: inferred from the model id, gemini)
   --fail-on measured|regressed|worse   (compare/verify: exit 2 when any page matches;
                           measured = a confirmed regression backed by a measured fact, the CI-safe choice)
@@ -133,6 +134,7 @@ const OPTIONS = {
   "from-images": { type: "string" },
   artifact: { type: "string" },
   pr: { type: "string" },
+  "no-sweep": { type: "boolean" },
   help: { type: "boolean", short: "h" },
 };
 

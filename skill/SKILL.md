@@ -66,6 +66,9 @@ not see the code or the product decisions, only what you give it.
    user at `critique.html` (findings boxed on the screenshots) when they want to see them.
    Also read `lint.md` (written beside the critique, free): token drift and spacing or
    type sprawl are objective; fix drift by using the token the value was meant to be.
+   The measured line per page includes the interaction sweep: keyboard stops without
+   visible focus and controls with no hover change are pixel-confirmed, so treat them
+   as facts, not taste.
 5. **Answer the critic.** Anything left under "Critic's requests" (files, answers,
    measurements, pages elsewhere) is yours to fulfil: write answers in
    `ui-critic/answers.md`, add files to `context.files`, add pages to `routes`, and rerun

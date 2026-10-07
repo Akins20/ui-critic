@@ -180,6 +180,18 @@ export function auditSummary(audit) {
     parts.push(`${errors} console errors`, `${failed} failed requests`);
     if (typeof rt.cls === "number") parts.push(`layout shift ${rt.cls}`);
   }
+  const ix = audit.interaction;
+  if (ix && !ix.error) {
+    if (ix.focus) {
+      parts.push(`${ix.focus.notVisible} of ${ix.focus.reached} keyboard stops without visible focus`);
+      if (ix.focus.hiddenStops?.length) parts.push(`${ix.focus.hiddenStops.length} focus stops on invisible elements`);
+      if (ix.focus.backwardJumps) parts.push(`${ix.focus.backwardJumps} focus jumps back up the page`);
+      if (ix.focus.positiveTabindex?.length) parts.push(`${ix.focus.positiveTabindex.length} positive tabindex`);
+      if (ix.focus.trap) parts.push("a keyboard trap");
+      parts.push(ix.focus.skipLink ? "skip link present" : "no skip link");
+    }
+    if (ix.hover) parts.push(`${ix.hover.unchanged} of ${ix.hover.checked} controls with no hover change`);
+  }
   return parts.join(", ");
 }
 

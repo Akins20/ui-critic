@@ -45,7 +45,7 @@ const SUBJECT = {
  * weaker evidence than a crash.
  */
 const RUNTIME_RULE = {
-  web: "- Runtime facts in the measured data (console errors, failed requests, HTTP errors, cumulative layout shift) are defects a screenshot cannot show: report each as a finding with the exact message or URL, and treat a layout shift above 0.1 as a real problem.",
+  web: "- Runtime facts in the measured data (console errors, failed requests, HTTP errors, cumulative layout shift) are defects a screenshot cannot show: report each as a finding with the exact message or URL, and treat a layout shift above 0.1 as a real problem.\n- Interaction facts were measured by hovering each control and walking the page with Tab: a keyboard stop without visible focus fails WCAG 2.4.7, focus on an invisible element or jumping back up the page breaks keyboard use (WCAG 2.4.3), a missing skip link costs keyboard users every header link on every page, and a control with no hover change on a desktop breaks the feedback principle. Report them naming the controls listed.",
   android:
     "- Runtime facts in the measured data: a crash, an ANR, or the app no longer in the foreground is a defect to report with the exact message. Error log lines are weaker evidence (an app's log carries framework noise, and errors seen on every launch are listed once for the run, not per screen): report them when they plausibly explain something visible or point at a real fault. Frame timing appears only from a physical device; a janky-frame share above ten percent while scrolling is worth reporting.",
   ios: "- Runtime facts, when present, are defects a screenshot cannot show: report each with the exact message.",
@@ -447,7 +447,7 @@ export async function critique({ dir, config }) {
     for (const s of shots) {
       for (const img of detailImages(s)) parts.push(text(`Screenshot: ${route} at ${s.viewport}, ${img.label}`), await imagePart(img.file));
       const audit = await readAudit(s);
-      if (audit) parts.push(text(`Measured facts for ${route} at ${s.viewport} (JSON): ${auditForPrompt(audit, isNative(platform) ? 6000 : 4000)}`));
+      if (audit) parts.push(text(`Measured facts for ${route} at ${s.viewport} (JSON): ${auditForPrompt(audit, isNative(platform) ? 6000 : 5000)}`));
     }
     const { data, thoughts } = await client.generateJSON({ parts, schema: PAGE, op: `page:${route}` });
     const slug = routeSlug(route);

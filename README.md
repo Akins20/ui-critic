@@ -263,6 +263,26 @@ Calls run a few at a time (`concurrency`, default 3, `--concurrency N`,
 `UI_CRITIC_CONCURRENCY`); each finished page or pair is checkpointed as it lands and the
 report keeps the capture order.
 
+## Interaction sweep
+
+A screenshot of a resting page cannot show whether a control reacts. On every desktop
+viewport (one with a mouse), after the screenshots and facts are taken, the capture
+sweeps each page without clicking anything:
+
+- **Hover:** each control is hovered and its look compared with its look at rest,
+  including its wrappers, children and pseudo-elements, so a link or button that gives
+  no hover feedback is listed.
+- **Keyboard:** the page is walked with Tab like a keyboard user would. Each stop is
+  checked for a visible focus indicator (WCAG 2.4.7), for landing on an invisible
+  element, and for jumping back up the page against the visual order (WCAG 2.4.3); the
+  walk also reports a skip link, a keyboard trap and positive tabindex values.
+
+Every "no feedback" verdict is confirmed by pixels before it is reported: the control's
+area is photographed hovered or focused and again at rest, and only an identical pair
+stands, so a ring drawn by a wrapper or an underline from a pseudo-element never counts
+as missing. The results are measured facts for the critic and appear in each page's
+summary line. `--no-sweep` (or `sweep.enabled: false`) turns it off.
+
 ## Design-system lint (free)
 
 Every web capture also records the page's style inventory: each colour, font

@@ -175,6 +175,9 @@ export const DEFAULTS = {
   // to count as drift (CIEDE2000), and an optional tokens file (a flat map or W3C
   // design tokens) beside the custom properties the pages declare.
   lint: { spacingBase: 4, maxFamilies: 2, maxSizes: 8, maxRadii: 4, maxShadows: 3, nearDelta: 3, tokens: undefined },
+  // The interaction sweep on viewports with a mouse: hover up to maxHover controls,
+  // and walk the page with up to maxTabs presses of Tab. Nothing is clicked.
+  sweep: { enabled: true, maxHover: 20, maxTabs: 60 },
   fromImages: undefined,
   json: false,
   failOn: undefined,
@@ -263,6 +266,7 @@ export function flagOverrides(flags, env = process.env) {
   if (flags.package || flags.serial) o.android = { ...(flags.package ? { package: flags.package } : {}), ...(flags.serial ? { serial: flags.serial } : {}) };
   if (flags["bundle-id"] || flags.udid) o.ios = { ...(flags["bundle-id"] ? { bundleId: flags["bundle-id"] } : {}), ...(flags.udid ? { udid: flags.udid } : {}) };
   if (flags["from-images"]) o.fromImages = flags["from-images"];
+  if (flags["no-sweep"]) o.sweep = { enabled: false };
   return o;
 }
 

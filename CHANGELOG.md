@@ -41,6 +41,11 @@
   annotation for each confirmed regression; `summary` and `comment` do the same anywhere.
 - The web capture is tested end to end in a real browser against a fixture site with
   planted defects, in CI on every change.
+- Interaction sweep on desktop viewports: every control hovered and compared with its
+  rest look, and the page walked with Tab for visible focus (WCAG 2.4.7), invisible
+  stops, backward jumps (WCAG 2.4.3), skip links, traps and positive tabindex. Every
+  "no feedback" verdict is confirmed by comparing photographs, so a ring drawn by a
+  wrapper is never reported as missing. Works on pages with a strict CSP. `--no-sweep`.
 - Design-system lint (`ui-critic lint`, free): web captures record the style inventory
   and the page's own tokens; the lint reports token drift (CIEDE2000), off-palette and
   look-alike colours, type sizes off the scale and sprawl, too many families, cramped

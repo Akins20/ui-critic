@@ -80,6 +80,38 @@ test("a real browser capture measures every planted defect", { skip, timeout: 18
   assert.equal(menu.route, "/ [menu-open]");
 });
 
+test("the interaction sweep finds missing hover and focus feedback, invisible stops and a bad focus order", { skip, timeout: 180_000 }, async () => {
+  const out = await mkdtemp(path.join(tmpdir(), "uic-sweep-"));
+  const manifest = await capture({
+    base,
+    routes: ["/interactions.html", "/order.html"],
+    viewports: { desktop: { width: 1024, height: 700, deviceScaleFactor: 1 }, mobile: { width: 390, height: 844, deviceScaleFactor: 2, isMobile: true } },
+    out,
+    label: "t",
+    sweep: { enabled: true, maxHover: 20, maxTabs: 30 },
+  });
+  const facts = async (route, viewport) => JSON.parse(await readFile(manifest.shots.find((s) => s.route === route && s.viewport === viewport).audit, "utf8"));
+  const desk = (await facts("/interactions.html", "desktop")).interaction;
+  assert.equal(desk.hover.unchanged, 2, `silent button and flat link give no hover feedback (${JSON.stringify(desk.hover)})`);
+  assert.deepEqual(desk.hover.examples.sort(), ['a "Flat link"', 'button "Silent button"']);
+  assert.equal(desk.focus.notVisible, 2, `outline: none with nothing in its place (${JSON.stringify(desk.focus)})`);
+  assert.deepEqual(desk.focus.notVisibleExamples.sort(), ['a "Flat link"', 'button "Silent button"']);
+  assert.deepEqual(desk.focus.hiddenStops, ['span "Invisible stop"'], "focus lands on a 1px element");
+  assert.equal(desk.focus.skipLink, true);
+  assert.equal(desk.focus.backwardJumps, 0);
+  assert.equal(desk.focus.trap, false);
+  assert.ok(desk.focus.reached >= 6);
+  const order = (await facts("/order.html", "desktop")).interaction;
+  assert.equal(order.focus.skipLink, false);
+  assert.ok(order.focus.backwardJumps >= 1, `CSS order moves the first button to the bottom, so focus jumps back up (${JSON.stringify(order.focus)})`);
+  assert.deepEqual(order.focus.positiveTabindex, ['a "Footer link with a positive tabi"']);
+  assert.equal((await facts("/interactions.html", "mobile")).interaction, undefined, "a touch viewport is not swept");
+  const shot = manifest.shots.find((s) => s.route === "/interactions.html" && s.viewport === "desktop");
+  const html = await readFile(path.join(site, "interactions.html"), "utf8");
+  assert.ok(!html.includes("data-uic-i"), "the fixture itself is untouched");
+  assert.ok(shot.fold.endsWith(".fold.png"));
+});
+
 test("the design-system lint reads the real computed styles and finds the planted drift", { skip, timeout: 120_000 }, async () => {
   const out = await mkdtemp(path.join(tmpdir(), "uic-lint-"));
   const manifest = await capture({

@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Focus order</title>
+<style>
+  body { margin: 0; font: 16px/1.5 Arial, sans-serif; }
+  main { padding: 16px; }
+  /* The first button in the source is moved to the bottom by CSS, so keyboard focus
+     visits it first and then jumps back up to the others. */
+  .stack { display: flex; flex-direction: column; gap: 16px; }
+  .stack button { height: 150px; }
+  .stack .moved { order: 3; }
+  a:focus-visible, button:focus-visible { outline: 3px solid #5a3ec8; }
+</style>
+</head>
+<body>
+<main>
+  <div class="stack">
+    <button class="moved" type="button">First in the source, last on screen</button>
+    <button type="button">Second in the source</button>
+    <button type="button">Third in the source</button>
+  </div>
+</main>
+<footer><a href="#late" tabindex="1">Footer link with a positive tabindex</a></footer>
+</body>
+</html>
