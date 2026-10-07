@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.0
 
 - Android apps, captured on an emulator or a device over adb (any app: Kotlin or Java,
   Compose or Views, React Native, Flutter). Routes are the launch screen or deep links,
