@@ -10,6 +10,7 @@ import { loadDecisions, decisionsSection, withholdSettled } from "./decisions.mj
 import { readEnvFile } from "./steps.mjs";
 import { runPool, serialWriter } from "./pool.mjs";
 import { nouns, isNative, detailImages } from "./shots.mjs";
+import { recordTrend } from "./trend.mjs";
 import { DEFAULT_DISCIPLINES, NATIVE_DISCIPLINES } from "./config.mjs";
 import { renderCritiqueHTML } from "./html.mjs";
 import { lintCapture, renderLint, lintForPrompt } from "./lint.mjs";
@@ -599,6 +600,7 @@ export async function critique({ dir, config }) {
     await writeFile(mdPath, renderCritique(result));
     await writeFile(htmlPath, renderCritiqueHTML(result, manifest, dir));
     if (thoughtLog.length) await writeFile(path.join(dir, "thoughts.md"), thoughtLog.join("\n\n") + "\n");
+    await recordTrend(config.out, result);
     if (siteError) throw new Error(`site pass failed: ${siteError} (per-page results were written to ${jsonPath}; rerun to retry the site pass)`);
     return { ...result, jsonPath, mdPath, htmlPath };
   } finally {

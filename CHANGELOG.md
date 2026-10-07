@@ -86,6 +86,10 @@
   desktop, mobile or both, so a review of a phone and a tablet labelled tablet findings as
   desktop or mobile. A finding that applies everywhere now says `all` (it said `both`).
 - An empty `viewports` map is rejected with a clear message instead of capturing nothing.
+- Score trends (`ui-critic trend`, free): every critique appends a line to
+  `<out>/trend.jsonl`, and the command prints the score per run, how it moved, and
+  the counts that do not drift beside it, overall or for one route. It says plainly
+  that a score is judgement and should be read as a direction.
 - Storybook (`--storybook <url>`): the stories of a running Storybook become the
   routes, so components are reviewed in isolation with everything the tool already
   does (measured facts, the lint, the hover and keyboard sweep, the critic, compare).

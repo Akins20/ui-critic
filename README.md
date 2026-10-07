@@ -250,6 +250,7 @@ triage instead of obeying.
 | `assets --in dir [--kind store\|social]` | store screenshots and social cards rendered from the screens already captured |
 | `fidelity --in dir [--file key]` | the build against its Figma frames: the design's own values against the rendered ones, each frame beside its screen |
 | `stories --storybook url` | list the stories a running Storybook can render, and which would be captured |
+| `trend [--route /shop]` | the score of every recorded run and how it moved, overall and per page (free) |
 | `report --in dir` | render `critique.html` and `compare.html` again from saved results, with no calls |
 | `summary --in dir` | a short Markdown summary for a pull request or a CI job |
 | `comment --in dir [--pr N]` | post that summary on the pull request, or update the earlier one |
@@ -379,6 +380,18 @@ and the fix; the report ends with proposed scales (a palette, a fitted modular t
 scale, spacing and radii). Tokens beyond the page's own custom properties can come
 from `lint.tokens` (a flat map or W3C design tokens). `--fail-on lint` exits 2 on a
 high-severity finding, for CI.
+
+## Score trends
+
+Every critique appends a line to `<out>/trend.jsonl`, and `ui-critic trend` prints
+it: the score of each run, how it moved, and beside it the counts that do not drift
+(high findings, high lint problems). `--route /shop` does the same for one page, and
+a run that went backwards is named first in the per-page list.
+
+Read it as a direction. The score is the critic's judgement and moves a little
+between runs even on an unchanged page, which is why the steadier counts are printed
+next to it and why the report says so at the foot. It is a conversation starter for a
+team, not a target to optimise.
 
 ## Storybook: review the components, not only the pages
 

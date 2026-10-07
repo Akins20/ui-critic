@@ -79,6 +79,7 @@ Commands
   summary    --in <capture dir> [--fail-on x]        a short Markdown summary for a pull request or a CI job
   comment    --in <capture dir> [--pr N]             post that summary on the pull request, or update the earlier one
                                                     (GITHUB_TOKEN, GITHUB_REPOSITORY; the number comes from the event)
+  trend      [--out dir] [--route /shop]             the score of every recorded run, and how it moved (free)
   stories    --storybook <url>                       list the stories a running Storybook can render
   devices                                            list connected Android devices and booted iOS simulators
   inspect    [--serial <id>]                         list what is on an Android screen now, with selectors
@@ -162,6 +163,7 @@ const OPTIONS = {
   storybook: { type: "string" },
   stories: { type: "string" },
   "all-stories": { type: "boolean" },
+  route: { type: "string" },
   captions: { type: "string" },
   product: { type: "string" },
   help: { type: "boolean", short: "h" },
@@ -364,6 +366,13 @@ async function main() {
       const captions = flags.captions && !auto ? JSON.parse(await readFile(flags.captions, "utf8")) : {};
       const result = await renderAssets({ dir: flags.in, config, kinds, captions, auto, product: flags.product });
       emit(config, [`assets written to ${result.dir}:`, ...result.files.map((f) => `  ${path.relative(result.dir, f.file)} (${f.width}x${f.height})`), `background ${result.colors.bg}, captions in ${result.colors.ink}`].join("\n"), { command: "assets", dir: result.dir, colors: result.colors, captions: result.captions, files: result.files });
+      return;
+    }
+    case "trend": {
+      const { readTrend, renderTrend } = await import("../src/trend.mjs");
+      const { unmangleRoute } = await import("../src/config.mjs");
+      const rows = await readTrend(config.out);
+      emit(config, renderTrend(rows, { route: flags.route ? unmangleRoute(flags.route) : null }), { command: "trend", runs: rows });
       return;
     }
     case "stories": {
