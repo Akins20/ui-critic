@@ -23,6 +23,7 @@ import { compareSummary, critiqueSummary, annotations } from "../src/summary.mjs
 import { upsertComment, pullRequestNumber } from "../src/github.mjs";
 import { appendFile, readFile, writeFile } from "node:fs/promises";
 import { lintCapture, renderLint } from "../src/lint.mjs";
+import { tryon } from "../src/tryon.mjs";
 
 /** The short summary of the results saved in a capture folder: the comparison if there is one, else the critique. */
 async function summaryOf(dir, opts) {
@@ -60,6 +61,9 @@ Commands
   run        --base <url> --label <name>             capture then critique, in one go
   verify     --before <dir> --base <url> [--label after]   capture "after" then compare
   cost       [--out <dir>]                           total the usage ledger per run at today's prices
+  tryon      --in <capture dir> --css <file>         lay CSS over the live pages, capture and compare with the original
+             --in <capture dir> --goal <text> [--variants 3]   let the critic draft directions as CSS and try each on
+             [--routes /,/shop] [--no-judge]          (no-judge renders without asking the critic for verdicts)
   lint       --in <capture dir> [--fail-on lint]     design-system lint from the computed styles (free): token drift,
                                                     off-palette colours, spacing off the grid, type, radius and shadow sprawl
   report     --in <capture dir>                      render critique.html and compare.html again from saved results (free)
@@ -138,6 +142,10 @@ const OPTIONS = {
   pr: { type: "string" },
   "no-sweep": { type: "boolean" },
   a11y: { type: "boolean" },
+  css: { type: "string" },
+  goal: { type: "string" },
+  variants: { type: "string" },
+  "no-judge": { type: "boolean" },
   help: { type: "boolean", short: "h" },
 };
 
@@ -290,6 +298,28 @@ async function main() {
         if (!lines.length) lines.push("no devices or simulators found");
         process.stdout.write([...lines, ...found.notes].join("\n") + "\n");
       }
+      return;
+    }
+    case "tryon": {
+      if (!flags.in) throw new Error("tryon needs --in <capture dir>, and --css <file> or --goal <text>");
+      const css = flags.css ? await readFile(flags.css, "utf8") : null;
+      const routes = flags.routes ? config.routes.map((r) => (typeof r === "string" ? r : r.path)) : null;
+      const result = await tryon({ dir: flags.in, config, goal: flags.goal, count: flags.variants ? Number(flags.variants) : 3, css, routes, judge: !flags["no-judge"] });
+      const line = (d) =>
+        d.changedNothing
+          ? `  ${d.name}: changed nothing on the first screens (check the selectors)`
+          : `  ${d.name}: ${d.pages.map((p) => `${p.route}@${p.viewport} ${p.percent ?? "?"}% changed${p.judgement ? `, ${p.judgement.verdict}, serves the goal: ${p.judgement.serves_goal}` : ""}`).join("; ")}`;
+      emit(
+        config,
+        [`try-on written:\n  ${result.htmlPath}\n  ${result.jsonPath}`, ...result.directions.map(line), result.pick?.best ? `recommended: ${result.pick.best}. ${result.pick.why}` : ""].filter(Boolean).join("\n"),
+        {
+          command: "tryon",
+          goal: result.goal,
+          pick: result.pick,
+          directions: result.directions.map((d) => ({ name: d.name, rationale: d.rationale, dir: d.dir, changedNothing: d.changedNothing, pages: d.pages.map((p) => ({ route: p.route, viewport: p.viewport, percent: p.percent, verdict: p.judgement?.verdict ?? null, servesGoal: p.judgement?.serves_goal ?? null })) })),
+          files: { html: result.htmlPath, json: result.jsonPath },
+        },
+      );
       return;
     }
     case "lint": {

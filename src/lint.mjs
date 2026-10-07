@@ -387,7 +387,9 @@ export async function lintCapture(dir, options = {}) {
   }
   const order = { high: 0, medium: 1, low: 2 };
   main.findings.sort((a, b) => order[a.severity] - order[b.severity]);
-  return { tool: "ui-critic", kind: "lint", base: manifest.base, label: manifest.label, pages: Array.from(new Set(items.map((i) => i.route))), generatedAt: new Date().toISOString(), ...main };
+  // The custom properties the pages declare, by name, for a try-on to override.
+  const declared = Object.fromEntries(Object.entries(mergeInventories(light.length ? light : dark).tokens).slice(0, 150));
+  return { tool: "ui-critic", kind: "lint", base: manifest.base, label: manifest.label, pages: Array.from(new Set(items.map((i) => i.route))), generatedAt: new Date().toISOString(), ...main, tokensDeclared: declared };
 }
 
 /** The lint as Markdown. */

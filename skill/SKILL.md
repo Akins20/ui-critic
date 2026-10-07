@@ -86,7 +86,10 @@ not see the code or the product decisions, only what you give it.
    ratio beats an impression). Adapt when the observation is right but the fix is wrong.
    Tell the user what you rejected and why; they arbitrate taste.
 7. **Implement** accepted items in the codebase's own idiom (tokens over raw values,
-   existing components). Run the project's lint, typecheck and tests.
+   existing components). Run the project's lint, typecheck and tests. For a visual change
+   whose look is uncertain (a palette, a type pairing, spacing), preview it first with
+   `ui-critic tryon --in <dir> --css <file>`, or let the critic draft directions with
+   `--goal`, and show the user `tryon.html` before touching the code.
 8. **Verify.** `ui-critic verify --before <out>/before --base <url-with-changes> --fail-on measured`.
    Every reported regression gets a second look; only confirmed ones count, tagged measured
    or judged. Fix the confirmed ones before reporting; `compare.md` lists improved,

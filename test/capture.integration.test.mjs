@@ -7,6 +7,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { capture, loadPlaywright } from "../src/capture.mjs";
 import { lintCapture } from "../src/lint.mjs";
+import { tryon } from "../src/tryon.mjs";
+import { DEFAULTS } from "../src/config.mjs";
 
 /**
  * The web capture end to end, in a real browser, against a fixture site with
@@ -148,6 +150,26 @@ test("accessibility variants render as asked and their layout failures are measu
   assert.ok(!(await png("forced-colors")).equals(await png("desktop")), "forced colours change the render");
   const darkStyles = JSON.parse(await readFile(shot("dark").styles, "utf8"));
   assert.ok(JSON.stringify(darkStyles.backgrounds).includes("rgb(18, 18, 18)"), "the dark scheme applied the page's dark background");
+});
+
+test("a try-on lays CSS over the live page, re-captures it beside the original and leaves the original alone", { skip, timeout: 180_000 }, async () => {
+  const out = await mkdtemp(path.join(tmpdir(), "uic-tryon-"));
+  const desktop = { width: 1024, height: 700, deviceScaleFactor: 1 };
+  const original = await capture({ base, routes: ["/styles.html"], viewports: { desktop }, out, label: "before", sweep: { enabled: false } });
+  const css = ":root { --brand: #ff0000; }\n@import url(https://evil.example/x.css);\nbody { background-image: url(https://evil.example/t.png); }";
+  const result = await tryon({ dir: original.dir, config: { ...DEFAULTS, out }, css, judge: false });
+  assert.equal(result.directions.length, 1);
+  const d = result.directions[0];
+  assert.ok(!d.css.includes("evil.example"), "the CSS was sanitised before use");
+  const tried = JSON.parse(await readFile(path.join(d.dir, "manifest.json"), "utf8"));
+  assert.equal(path.dirname(tried.dir), path.dirname(original.dir), "captured beside the original");
+  const styles = JSON.parse(await readFile(tried.shots[0].styles, "utf8"));
+  assert.ok(JSON.stringify(styles.colors).includes("rgb(255, 0, 0)"), "the heading now renders in the overridden brand colour");
+  const before = JSON.parse(await readFile(original.shots[0].styles, "utf8"));
+  assert.ok(!JSON.stringify(before.colors).includes("rgb(255, 0, 0)"), "the original capture is untouched");
+  assert.ok(!(await readFile(tried.shots[0].fold)).equals(await readFile(original.shots[0].fold)), "the render changed");
+  const gallery = await readFile(result.htmlPath, "utf8");
+  assert.match(gallery, /tryon-proposal\/styles-html\.desktop\.fold\.png/);
 });
 
 test("the design-system lint reads the real computed styles and finds the planted drift", { skip, timeout: 120_000 }, async () => {

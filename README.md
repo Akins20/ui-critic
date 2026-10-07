@@ -244,6 +244,7 @@ triage instead of obeying.
 | `run --base url --label name` | capture then critique |
 | `verify --before dir --base url` | capture "after" then compare, in one step |
 | `cost [--out dir]` | total the usage ledger per run at today's prices |
+| `tryon --in dir --css file` or `--goal text` | lay CSS over the live pages and compare with the original, or let the critic draft directions |
 | `lint --in dir` | design-system lint from the computed styles: token drift, palette, type, spacing, radius, shadow (free) |
 | `report --in dir` | render `critique.html` and `compare.html` again from saved results, with no calls |
 | `summary --in dir` | a short Markdown summary for a pull request or a CI job |
@@ -262,6 +263,28 @@ the second look.
 Calls run a few at a time (`concurrency`, default 3, `--concurrency N`,
 `UI_CRITIC_CONCURRENCY`); each finished page or pair is checkpointed as it lands and the
 report keeps the capture order.
+
+## Try-on: see a change before you make it
+
+`ui-critic tryon` lays CSS over the live pages of an existing capture, captures them
+again beside the original, and shows each version beside the original in
+`tryon.html`. Nothing in the codebase changes.
+
+- `--css proposal.css`: your CSS, or a fix an agent drafted, previewed on the real pages
+  before it is implemented.
+- `--goal "a warmer palette that keeps the brand" --variants 3`: the critic drafts
+  directions as CSS, grounded in the brief, the settled decisions and the page's own
+  custom properties (read by the lint), and each is tried on.
+
+Every page reports the measured share of its first screen that changed (a direction
+whose selectors matched nothing says so instead of passing for "same"), what visibly
+changed, whether it serves the goal, and its gains and losses against the original;
+with several directions the critic names the one to take forward. Try-on CSS wins over
+the page's own (`:root` overrides outrank `:root[data-theme]`, and the style stays last
+even when a framework adds stylesheets during hydration). CSS from the critic is
+sanitised: no imports or URLs except Google Fonts and data URLs, no legacy script hooks.
+`--routes` picks the pages (three by default) and `--no-judge` renders without asking
+the critic. A two-direction run on one page costs about $0.09.
 
 ## Accessibility variants
 

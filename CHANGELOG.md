@@ -41,6 +41,12 @@
   annotation for each confirmed regression; `summary` and `comment` do the same anywhere.
 - The web capture is tested end to end in a real browser against a fixture site with
   planted defects, in CI on every change.
+- Try-on (`ui-critic tryon`): lay CSS over the live pages of a capture and see each
+  version beside the original in tryon.html, from a CSS file or from directions the
+  critic drafts for a goal using the page's own custom properties. Each page gets the
+  measured share of changed pixels, what changed, whether it serves the goal, gains and
+  losses, and the critic picks a direction. The CSS outranks the page's own and stays
+  last through framework hydration; CSS from the critic is sanitised.
 - Accessibility variants: viewports can set `zoom`, `textSpacing`, `forcedColors` and
   `vision`, and `--a11y` adds 320px reflow, 200% zoom, text spacing, forced colours,
   deuteranopia and dark; the critic is told what each tests. Every web capture now

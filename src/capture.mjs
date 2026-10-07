@@ -282,33 +282,56 @@ export async function openContext(browser, vp, extra = {}) {
     colorScheme: vp.colorScheme ?? "light",
     reducedMotion: "reduce",
     ...(vp.forcedColors ? { forcedColors: "active" } : {}),
-    ...(vp.textSpacing ? { bypassCSP: true } : {}),
+    ...(vp.textSpacing || vp.injectCss ? { bypassCSP: true } : {}),
     ...extra,
   });
+}
+
+/**
+ * A script that adds a style element with the given CSS as soon as the document has
+ * a head. With keepLast, the element moves back to the end of the head whenever the
+ * page adds a stylesheet after it (React hoists stylesheets during hydration), so
+ * on a tie the overriding CSS still comes last and wins.
+ */
+function styleScript(id, css, { keepLast = false } = {}) {
+  return `(() => {
+  const add = () => {
+    let s = document.getElementById(${JSON.stringify(id)});
+    if (!s) {
+      s = document.createElement("style");
+      s.id = ${JSON.stringify(id)};
+      s.textContent = ${JSON.stringify(css)};
+    }
+    const head = document.head || document.documentElement;
+    if (head.lastElementChild !== s) head.appendChild(s);
+    ${keepLast ? `if (!window.__uicKeepLast) {
+      window.__uicKeepLast = new MutationObserver((records) => {
+        if (records.some((r) => Array.from(r.addedNodes).some((n) => n !== s && (n.tagName === "STYLE" || n.tagName === "LINK")))) head.appendChild(s);
+      });
+      window.__uicKeepLast.observe(head, { childList: true });
+    }` : ""}
+  };
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", add);
+  else add();
+})();`;
 }
 
 /** WCAG 1.4.12's text spacing: the most a reader may set without content breaking. */
 export const TEXT_SPACING_CSS =
   "*:not(svg):not(svg *){line-height:1.5 !important;letter-spacing:0.12em !important;word-spacing:0.16em !important}p{margin-bottom:2em !important}";
 
-const TEXT_SPACING_SCRIPT = `(() => {
-  const add = () => {
-    if (document.getElementById("uic-text-spacing")) return;
-    const s = document.createElement("style");
-    s.id = "uic-text-spacing";
-    s.textContent = ${JSON.stringify(TEXT_SPACING_CSS)};
-    (document.head || document.documentElement).appendChild(s);
-  };
-  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", add);
-  else add();
-})();`;
+const TEXT_SPACING_SCRIPT = styleScript("uic-text-spacing", TEXT_SPACING_CSS);
 
 /** The colour-vision simulations Chromium can render. */
 export const VISION_TYPES = ["achromatopsia", "deuteranopia", "protanopia", "tritanopia", "blurredVision", "reducedContrast"];
 
-/** Applies a viewport's page-level emulation: text spacing overrides and a colour-vision simulation. */
+/**
+ * Applies a viewport's page-level emulation: text spacing overrides, a try-on's CSS
+ * laid over the page, and a colour-vision simulation.
+ */
 export async function preparePage(page, vp) {
   if (vp.textSpacing) await page.addInitScript(TEXT_SPACING_SCRIPT);
+  if (vp.injectCss) await page.addInitScript(styleScript("uic-tryon", vp.injectCss, { keepLast: true }));
   if (vp.vision) {
     const cdp = await page.context().newCDPSession(page);
     await cdp.send("Emulation.setEmulatedVisionDeficiency", { type: vp.vision });
@@ -371,7 +394,9 @@ export function scenariosAt(scenarios, viewportName, vp = null) {
  * reason is recorded. Motion is reduced so carousels and entrance animations do
  * not smear the capture.
  */
-export async function capture({ base, routes, scenarios = [], auth = null, viewports, out, label, hideSelectors = [], sweep = null }) {
+export async function capture({ base, routes, scenarios = [], auth = null, viewports: configured, out, label, hideSelectors = [], sweep = null, injectCss = null }) {
+  // A try-on lays its CSS over every page of every viewport.
+  const viewports = injectCss ? Object.fromEntries(Object.entries(configured).map(([name, vp]) => [name, { ...vp, injectCss }])) : configured;
   const playwright = await loadPlaywright();
   const dir = path.join(out, label);
   await mkdir(dir, { recursive: true });
@@ -429,7 +454,7 @@ export async function capture({ base, routes, scenarios = [], auth = null, viewp
   } finally {
     await browser.close();
   }
-  const manifest = { label, base, capturedAt: new Date().toISOString(), viewports, hideSelectors, shots, skipped: Array.from(new Set(skipped)), dir };
+  const manifest = { label, base, capturedAt: new Date().toISOString(), viewports: configured, hideSelectors, shots, skipped: Array.from(new Set(skipped)), dir, ...(injectCss ? { injectedCss: injectCss } : {}) };
   await writeFile(path.join(dir, "manifest.json"), JSON.stringify(manifest, null, 2));
   return manifest;
 }
