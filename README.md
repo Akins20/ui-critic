@@ -243,6 +243,8 @@ triage instead of obeying.
 | `verify --before dir --base url` | capture "after" then compare, in one step |
 | `cost [--out dir]` | total the usage ledger per run at today's prices |
 | `report --in dir` | render `critique.html` and `compare.html` again from saved results, with no calls |
+| `summary --in dir` | a short Markdown summary for a pull request or a CI job |
+| `comment --in dir [--pr N]` | post that summary on the pull request, or update the earlier one |
 | `devices` | list connected Android devices and emulators, and booted iOS simulators |
 | `inspect [--serial id]` | list what is on an Android screen now, with a selector for each element |
 
@@ -257,6 +259,48 @@ the second look.
 Calls run a few at a time (`concurrency`, default 3, `--concurrency N`,
 `UI_CRITIC_CONCURRENCY`); each finished page or pair is checkpointed as it lands and the
 report keeps the capture order.
+
+## In CI
+
+The repository is also a GitHub Action. On a pull request it captures the build under
+review (a preview deployment, say), compares it with production, posts one comment on
+the pull request (updated in place on every later push), uploads the screenshots and
+the HTML reports as an artifact, and fails the job only on a confirmed regression a
+measured fact proves.
+
+```yaml
+name: ui review
+on: pull_request
+permissions:
+  contents: read
+  pull-requests: write
+jobs:
+  ui-critic:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Akins20/ui-critic@v0.4.0
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        with:
+          before-base: https://your.site
+          base: ${{ steps.preview.outputs.url }}   # or a server you start in an earlier step
+          fail-on: measured
+```
+
+Inputs: `command` (`verify`, the default; `run`, `capture`, `critique`, `compare`),
+`base`, `before-base` or `before` (a capture folder), `label`, `config`, `out`,
+`fail-on` (`measured`, `regressed`, `worse`, or empty), `args` (extra flags),
+`comment`, `artifact`, `install-browser`. Outputs: `gate` (`passed`, `tripped` or
+`error`) and `report` (the folder). The action runs the tool from its own checkout,
+so the version is the tag you pin, and it installs only Chromium.
+
+Outside the action, any CI can do the same with the CLI: inside GitHub Actions every
+critique and comparison also writes its summary to the job summary page and raises an
+error annotation for each confirmed measured regression (a warning for a judged one).
+`ui-critic summary --in <dir>` prints that summary for another system, and
+`ui-critic comment --in <dir>` posts it on the pull request (it reads `GITHUB_TOKEN`,
+`GITHUB_REPOSITORY` and the event, or `--pr N`).
 
 ## Configuration
 

@@ -84,7 +84,9 @@ not see the code or the product decisions, only what you give it.
    Every reported regression gets a second look; only confirmed ones count, tagged measured
    or judged. Fix the confirmed ones before reporting; `compare.md` lists improved,
    regressed, not-confirmed and still open per page and viewport. In CI use `--fail-on
-   measured`, which cannot flake on taste.
+   measured`, which cannot flake on taste. To set CI up, the repository is a GitHub
+   Action (`Akins20/ui-critic@<version>`, see the README's "In CI"): it comments on the
+   pull request, uploads the HTML reports and gates on measured regressions.
 9. **Report** in plain language: what changed, what was rejected and why, what the critic
    still asks for, what is still open, the cost of the runs (`ui-critic cost` totals the
    ledger per run at built-in prices; the usage line of each report names the price it

@@ -1,0 +1,43 @@
+name: action smoke test
+
+# Runs this repository's own action against the fixture site, in capture mode so no
+# critic key is needed: it proves the action installs Chromium, captures, uploads the
+# report and reads the gate, on every change to the action or the code it runs.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  capture:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Serve the fixture site
+        run: |
+          python3 -m http.server 8080 --directory test/fixtures/site > /dev/null 2>&1 &
+          for i in $(seq 1 20); do curl -fs http://localhost:8080/ > /dev/null && break; sleep 0.5; done
+      - name: Run the action
+        id: critic
+        uses: ./
+        with:
+          command: capture
+          base: http://localhost:8080
+          label: smoke
+          args: --routes /,/about.html
+          comment: "false"
+          artifact: ui-critic-smoke
+      - name: The capture is complete and the gate passed
+        env:
+          GATE: ${{ steps.critic.outputs.gate }}
+          REPORT: ${{ steps.critic.outputs.report }}
+        run: |
+          test "$GATE" = passed
+          test -f "$REPORT/manifest.json"
+          shots=$(node -p "require('./$REPORT/manifest.json').shots.length")
+          test "$shots" -eq 4
+          node -e "const a = require('./$REPORT/home.desktop.audit.json'); if (!(a.textContrast.failingAA >= 1)) process.exit(1)"

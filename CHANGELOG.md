@@ -33,6 +33,14 @@
 - `ui-critic report --in <dir>` renders the HTML and Markdown again from saved results.
 - A compare's usage line said "no cache" for runs that used one (the summary was read
   after the cache was deleted).
+- A GitHub Action (`uses: Akins20/ui-critic@<version>`): verify a pull request's build
+  against production, one pull request comment updated in place, the HTML reports as an
+  artifact, and a gate that fails only on measured regressions. Inputs reach the shell
+  as environment variables, never interpolated into scripts.
+- Inside GitHub Actions the CLI writes its summary to the job summary page and raises an
+  annotation for each confirmed regression; `summary` and `comment` do the same anywhere.
+- The web capture is tested end to end in a real browser against a fixture site with
+  planted defects, in CI on every change.
 - A `viewports` map in the config replaces the built-in desktop and mobile pair instead of
   merging with it. A phone-only review that named one viewport still captured, and paid to
   critique, a desktop pass of every page.

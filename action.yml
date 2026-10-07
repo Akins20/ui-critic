@@ -1,0 +1,155 @@
+name: ui-critic
+description: A second pair of eyes on a UI in CI. Capture, critique or verify a site, comment on the pull request, and fail only on measured regressions.
+author: Otesc
+branding:
+  icon: eye
+  color: purple
+
+# The tool runs from this action's own checkout (it has no dependencies), so the
+# version is the ref you pin (Akins20/ui-critic@v0.4.0). Pass the critic's key as an
+# environment variable on the step (GEMINI_API_KEY or OPENAI_API_KEY from a secret);
+# commenting needs `permissions: pull-requests: write` on the job.
+
+inputs:
+  command:
+    description: "verify (capture after, compare with before), run (capture and critique), capture, critique or compare"
+    default: verify
+  base:
+    description: URL of the build under review, for example the pull request's preview deployment or a local server
+    default: ""
+  before-base:
+    description: URL to capture the before from (production, say) when there is no before capture folder
+    default: ""
+  before:
+    description: A before capture folder to compare with, instead of capturing one from before-base
+    default: ""
+  label:
+    description: Label of the capture this run makes
+    default: after
+  config:
+    description: Path to ui-critic.config.json
+    default: ui-critic.config.json
+  out:
+    description: Folder for captures and reports
+    default: ui-critic-out
+  fail-on:
+    description: "measured (a confirmed regression a measured fact proves; cannot flake on taste), regressed, worse, or empty for never"
+    default: measured
+  args:
+    description: Extra flags for the command, for example --routes /,/shop --concurrency 4
+    default: ""
+  comment:
+    description: Post the summary on the pull request, updating the same comment on every run
+    default: "true"
+  artifact:
+    description: Name of the uploaded report artifact (screenshots, critique.html, compare.html)
+    default: ui-critic-report
+  install-browser:
+    description: Install Chromium for capture (not needed for critique or compare of existing captures)
+    default: "true"
+  github-token:
+    description: Token for the pull request comment
+    default: ${{ github.token }}
+
+outputs:
+  report:
+    description: The folder holding this run's reports
+    value: ${{ steps.run.outputs.report }}
+  gate:
+    description: passed, tripped (a --fail-on match) or error
+    value: ${{ steps.run.outputs.gate }}
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@v4
+      with:
+        node-version: 22
+
+    - name: Chromium for capture
+      if: inputs.install-browser == 'true' && inputs.command != 'critique' && inputs.command != 'compare'
+      shell: bash
+      working-directory: ${{ github.action_path }}
+      run: |
+        npm install --no-save --no-audit --no-fund playwright@1
+        npx playwright install --with-deps chromium
+
+    - name: Capture the before
+      if: inputs.command == 'verify' && inputs.before == '' && inputs.before-base != ''
+      shell: bash
+      env:
+        UIC: ${{ github.action_path }}/bin/ui-critic.mjs
+        CONFIG: ${{ inputs.config }}
+        OUT: ${{ inputs.out }}
+        BEFORE_BASE: ${{ inputs.before-base }}
+        ARGS: ${{ inputs.args }}
+      run: |
+        cfg=(); [ -f "$CONFIG" ] && cfg=(--config "$CONFIG")
+        # shellcheck disable=SC2086
+        node "$UIC" capture "${cfg[@]}" --out "$OUT" --base "$BEFORE_BASE" --label before $ARGS
+
+    - name: ui-critic
+      id: run
+      shell: bash
+      env:
+        UIC: ${{ github.action_path }}/bin/ui-critic.mjs
+        COMMAND: ${{ inputs.command }}
+        CONFIG: ${{ inputs.config }}
+        OUT: ${{ inputs.out }}
+        BASE: ${{ inputs.base }}
+        BEFORE: ${{ inputs.before }}
+        BEFORE_BASE: ${{ inputs.before-base }}
+        LABEL: ${{ inputs.label }}
+        FAIL_ON: ${{ inputs.fail-on }}
+        ARGS: ${{ inputs.args }}
+        ARTIFACT: ${{ inputs.artifact }}
+      run: |
+        set +e
+        cfg=(); [ -f "$CONFIG" ] && cfg=(--config "$CONFIG")
+        base=(); [ -n "$BASE" ] && base=(--base "$BASE")
+        gate=(); [ -n "$FAIL_ON" ] && gate=(--fail-on "$FAIL_ON")
+        before="$BEFORE"; [ -z "$before" ] && [ -n "$BEFORE_BASE" ] && before="$OUT/before"
+        case "$COMMAND" in
+          verify) node "$UIC" verify "${cfg[@]}" --out "$OUT" "${base[@]}" --before "$before" --label "$LABEL" "${gate[@]}" $ARGS ;;
+          run|capture) node "$UIC" "$COMMAND" "${cfg[@]}" --out "$OUT" "${base[@]}" --label "$LABEL" $ARGS ;;
+          critique) node "$UIC" critique "${cfg[@]}" --out "$OUT" --in "$OUT/$LABEL" $ARGS ;;
+          compare) node "$UIC" compare "${cfg[@]}" --out "$OUT" --before "$before" --after "$OUT/$LABEL" "${gate[@]}" $ARGS ;;
+          *) echo "unknown command $COMMAND"; false ;;
+        esac
+        code=$?
+        if [ "$code" -eq 0 ]; then gate_state=passed; elif [ "$code" -eq 2 ]; then gate_state=tripped; else gate_state=error; fi
+        {
+          echo "code=$code"
+          echo "gate=$gate_state"
+          echo "report=$OUT/$LABEL"
+        } >> "$GITHUB_OUTPUT"
+        exit 0
+
+    - name: Comment on the pull request
+      if: always() && inputs.comment == 'true' && github.event_name == 'pull_request' && steps.run.outputs.code != '1' && inputs.command != 'capture'
+      shell: bash
+      env:
+        UIC: ${{ github.action_path }}/bin/ui-critic.mjs
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+        OUT: ${{ inputs.out }}
+        LABEL: ${{ inputs.label }}
+        FAIL_ON: ${{ inputs.fail-on }}
+        ARTIFACT: ${{ inputs.artifact }}
+      run: |
+        gate=(); [ -n "$FAIL_ON" ] && gate=(--fail-on "$FAIL_ON")
+        node "$UIC" comment --in "$OUT/$LABEL" --artifact "$ARTIFACT" "${gate[@]}" || echo "::warning title=ui-critic::the pull request comment could not be posted"
+
+    - name: Upload the report
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ inputs.artifact }}
+        path: ${{ inputs.out }}
+        if-no-files-found: ignore
+
+    - name: Gate
+      if: always()
+      shell: bash
+      env:
+        CODE: ${{ steps.run.outputs.code }}
+      run: exit "${CODE:-1}"

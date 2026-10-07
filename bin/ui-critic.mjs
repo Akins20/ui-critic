@@ -19,6 +19,34 @@ import { inspectScreen, renderInspect } from "../src/native/inspect.mjs";
 import { parseActivity } from "../src/native/android.mjs";
 import { rerender } from "../src/html.mjs";
 import { renderCritique } from "../src/report.mjs";
+import { compareSummary, critiqueSummary, annotations } from "../src/summary.mjs";
+import { upsertComment, pullRequestNumber } from "../src/github.mjs";
+import { appendFile, readFile } from "node:fs/promises";
+
+/** The short summary of the results saved in a capture folder: the comparison if there is one, else the critique. */
+async function summaryOf(dir, opts) {
+  const read = async (name) => JSON.parse(await readFile(path.join(dir, name), "utf8"));
+  try {
+    return compareSummary(await read("compare.json"), opts);
+  } catch (err) {
+    if (err.code !== "ENOENT") throw err;
+  }
+  try {
+    return critiqueSummary(await read("critique.json"), opts);
+  } catch (err) {
+    if (err.code !== "ENOENT") throw err;
+  }
+  throw new Error(`${dir} has no compare.json or critique.json to summarise`);
+}
+
+/**
+ * Inside GitHub Actions: the summary goes to the job's summary page and confirmed
+ * regressions become annotations, with no extra step in the workflow.
+ */
+async function reportToActions(config, summary, result) {
+  if (process.env.GITHUB_STEP_SUMMARY) await appendFile(process.env.GITHUB_STEP_SUMMARY, summary + "\n").catch(() => {});
+  if (process.env.GITHUB_ACTIONS === "true" && !config.json && result) for (const line of annotations(result)) process.stdout.write(line + "\n");
+}
 
 const HELP = `ui-critic: a second pair of eyes on a UI, for coding agents and humans.
 
@@ -32,6 +60,9 @@ Commands
   verify     --before <dir> --base <url> [--label after]   capture "after" then compare
   cost       [--out <dir>]                           total the usage ledger per run at today's prices
   report     --in <capture dir>                      render critique.html and compare.html again from saved results (free)
+  summary    --in <capture dir> [--fail-on x]        a short Markdown summary for a pull request or a CI job
+  comment    --in <capture dir> [--pr N]             post that summary on the pull request, or update the earlier one
+                                                    (GITHUB_TOKEN, GITHUB_REPOSITORY; the number comes from the event)
   devices                                            list connected Android devices and booted iOS simulators
   inspect    [--serial <id>]                         list what is on an Android screen now, with selectors
 
@@ -97,6 +128,8 @@ const OPTIONS = {
   "bundle-id": { type: "string" },
   udid: { type: "string" },
   "from-images": { type: "string" },
+  artifact: { type: "string" },
+  pr: { type: "string" },
   help: { type: "boolean", short: "h" },
 };
 
@@ -200,6 +233,7 @@ async function doCritique(config, dir) {
       files: { json: result.jsonPath, md: result.mdPath, html: result.htmlPath },
     },
   );
+  await reportToActions(config, critiqueSummary(result), null);
   return result;
 }
 
@@ -221,6 +255,7 @@ async function doCompare(config, before, after) {
       files: { json: result.jsonPath, md: result.mdPath, html: result.htmlPath },
     },
   );
+  await reportToActions(config, compareSummary(result, { failOn: config.failOn }), result);
   gate(config, result.results);
   return result;
 }
@@ -247,6 +282,25 @@ async function main() {
         if (!lines.length) lines.push("no devices or simulators found");
         process.stdout.write([...lines, ...found.notes].join("\n") + "\n");
       }
+      return;
+    }
+    case "summary": {
+      if (!flags.in) throw new Error("summary needs --in <capture dir>");
+      process.stdout.write(await summaryOf(flags.in, { failOn: config.failOn, artifact: flags.artifact }));
+      return;
+    }
+    case "comment": {
+      if (!flags.in) throw new Error("comment needs --in <capture dir>");
+      const body = await summaryOf(flags.in, { failOn: config.failOn, artifact: flags.artifact });
+      const issue = flags.pr ? Number(flags.pr) : await pullRequestNumber(process.env.GITHUB_EVENT_PATH);
+      const done = await upsertComment({
+        token: process.env.GITHUB_TOKEN ?? process.env.GH_TOKEN,
+        repository: process.env.GITHUB_REPOSITORY,
+        issue,
+        body,
+        api: process.env.GITHUB_API_URL ?? "https://api.github.com",
+      });
+      emit(config, `pull request #${issue}: comment ${done.action}`, { command: "comment", issue, ...done });
       return;
     }
     case "report": {

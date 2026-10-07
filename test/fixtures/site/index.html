@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fixture shop</title>
+<style>
+  body { margin: 0; font: 16px/1.5 system-ui, sans-serif; color: #111; background: #fff; }
+  header, footer { padding: 16px; border-bottom: 1px solid #ddd; }
+  main { padding: 16px; }
+  .faint { color: #999999; }
+  .tiny { display: inline-block; width: 16px; height: 16px; overflow: hidden; font-size: 10px; }
+  #menu { display: none; padding: 8px; background: #f3f3f3; }
+  #menu.open { display: block; }
+  .tall { height: 1600px; }
+</style>
+</head>
+<body>
+<header>
+  <nav><a href="/about.html">About</a> <button id="menu-button" type="button">Menu</button> <a class="tiny" href="/about.html">i</a></nav>
+  <div id="menu">Menu is open</div>
+</header>
+<main>
+  <h1>Fixture shop</h1>
+  <p>Readable body text.</p>
+  <p class="faint">Low contrast text</p>
+  <h2>Things</h2>
+  <img src="/missing.png" width="80" height="80">
+  <div class="tall"></div>
+</main>
+<footer>Footer</footer>
+<script>
+  document.getElementById("menu-button").addEventListener("click", () => document.getElementById("menu").classList.add("open"));
+  console.error("fixture console error");
+  setTimeout(() => { throw new Error("fixture boom"); }, 10);
+  // A banner that arrives late and pushes everything down: layout shift.
+  setTimeout(() => {
+    const banner = document.createElement("div");
+    banner.style.height = "300px";
+    banner.style.background = "#eee";
+    banner.textContent = "Late banner";
+    document.body.insertBefore(banner, document.body.firstChild);
+  }, 150);
+</script>
+</body>
+</html>
