@@ -1,5 +1,5 @@
 name: ui-critic
-description: A second pair of eyes on a UI in CI. Capture, critique or verify a site, comment on the pull request, and fail only on measured regressions.
+description: "A second pair of eyes on a UI in CI: critique or verify a site, comment on the PR, fail only on measured regressions."
 author: Otesc
 branding:
   icon: eye
