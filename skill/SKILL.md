@@ -14,7 +14,7 @@ not see the code or the product decisions, only what you give it.
 - `GEMINI_API_KEY` or `OPENAI_API_KEY` exported in the shell (Gemini is the default critic;
   `--model gpt-5.4-mini` or `--provider openai` switches). Never paste a key into files,
   prompts, logs or reports.
-- The CLI: `npx @akins20/ui-critic` (or `npm i -g @akins20/ui-critic`, which installs the `ui-critic` command), or from a checkout `node <absolute path>/ui-critic/bin/ui-critic.mjs`.
+- The CLI: `npx uicritic` or `npx @akins20/ui-critic` (or `npm i -g @akins20/ui-critic`, which installs the `ui-critic` and `uicritic` commands), or from a checkout `node <absolute path>/ui-critic/bin/ui-critic.mjs`. Never `npx ui-critic`: that unscoped name is a different package.
 - For capture: Playwright with Chromium in the project (`@playwright/test` counts). Without it,
   point `critique` at screenshots taken another way, described by a `manifest.json`.
 - A URL to review: production, a preview deployment, or the local dev server. For an

@@ -5,6 +5,22 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { compareSummary, critiqueSummary, annotations, MARKER } from "../src/summary.mjs";
 import { upsertComment, pullRequestNumber } from "../src/github.mjs";
+import { stampAlias } from "../scripts/stamp-alias.mjs";
+import { readFileSync } from "node:fs";
+
+test("npx uicritic: the alias carries the main version and pins it, and both command names install", () => {
+  const root = path.join(path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1")), "..");
+  const main = JSON.parse(readFileSync(path.join(root, "package.json"), "utf8"));
+  const alias = JSON.parse(readFileSync(path.join(root, "alias", "uicritic", "package.json"), "utf8"));
+  assert.deepEqual(main.bin, { "ui-critic": "bin/ui-critic.mjs", uicritic: "bin/ui-critic.mjs" });
+  assert.equal(alias.name, "uicritic");
+  assert.deepEqual(alias.bin, { uicritic: "bin.mjs" });
+  const stamped = stampAlias(alias, "9.8.7");
+  assert.equal(stamped.version, "9.8.7");
+  assert.deepEqual(stamped.dependencies, { "@akins20/ui-critic": "9.8.7" });
+  assert.match(readFileSync(path.join(root, "alias", "uicritic", "bin.mjs"), "utf8"), /import\("@akins20\/ui-critic\/bin\/ui-critic\.mjs"\)/);
+  assert.ok(!main.exports, "no exports map, so the alias's deep import keeps resolving");
+});
 
 const comparison = {
   before: { label: "before" },

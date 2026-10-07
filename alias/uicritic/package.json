@@ -1,0 +1,41 @@
+{
+  "name": "uicritic",
+  "version": "0.0.0",
+  "description": "The ui-critic command under a name npx can find: `npx uicritic` runs @akins20/ui-critic, a second pair of eyes on a UI.",
+  "type": "module",
+  "bin": {
+    "uicritic": "bin.mjs"
+  },
+  "files": [
+    "bin.mjs",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@akins20/ui-critic": "0.0.0"
+  },
+  "keywords": [
+    "ui-critic",
+    "design-review",
+    "ui",
+    "critique",
+    "gemini",
+    "openai",
+    "claude-code",
+    "android",
+    "accessibility"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Akins20/ui-critic.git",
+    "directory": "alias/uicritic"
+  },
+  "homepage": "https://github.com/Akins20/ui-critic#readme",
+  "author": "Otesc <otesc.co@gmail.com>",
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  }
+}

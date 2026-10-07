@@ -23,7 +23,9 @@ ui-critic run --label before --follow-requests
 ui-critic verify --before ui-critic-out/before --base http://localhost:3000
 ```
 
-The package is `@akins20/ui-critic` on npm; the command it installs is `ui-critic`.
+The package is `@akins20/ui-critic` on npm; it installs the commands `ui-critic` and
+`uicritic`. Run it without installing as `npx uicritic` or `npx @akins20/ui-critic`.
+Not `npx ui-critic`: that unscoped name belongs to a different package.
 
 For an Android app:
 

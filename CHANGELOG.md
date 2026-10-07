@@ -41,6 +41,9 @@
   annotation for each confirmed regression; `summary` and `comment` do the same anywhere.
 - The web capture is tested end to end in a real browser against a fixture site with
   planted defects, in CI on every change.
+- `npx uicritic` runs the tool: `npx ui-critic` reached a different package that owns
+  the unscoped name. The package now also installs a `uicritic` command, and a small
+  `uicritic` package (published beside this one, at the same version) points at it.
 - A `viewports` map in the config replaces the built-in desktop and mobile pair instead of
   merging with it. A phone-only review that named one viewport still captured, and paid to
   critique, a desktop pass of every page.

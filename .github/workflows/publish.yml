@@ -72,6 +72,25 @@ jobs:
         # Verbose so that a refused OIDC token exchange is visible in the log; at the
         # default level npm says nothing about it and fails with a bare "need auth".
         run: npm publish --access public --loglevel verbose
+      # `npx uicritic` runs the tool: the unscoped name ui-critic belongs to another
+      # package. The alias is published after the main package, at the same version,
+      # and never blocks a release: until its own trusted publisher is set up on
+      # npmjs.com (after a first publish by hand), this step reports and moves on.
+      - name: Publish the uicritic alias
+        continue-on-error: true
+        run: |
+          node scripts/stamp-alias.mjs
+          spec="uicritic@$(node -p "require('./package.json').version")"
+          if npm view "$spec" version > /dev/null 2>&1; then
+            echo "$spec is already published"
+          else
+            cd alias/uicritic
+            if [ -n "$NPM_TOKEN" ]; then npm config set "//registry.npmjs.org/:_authToken=${NPM_TOKEN}"; fi
+            npm publish --access public --loglevel verbose || {
+              echo "::warning title=uicritic alias::not published. Publish it once by hand (npm publish in alias/uicritic after node scripts/stamp-alias.mjs), then add a trusted publisher for uicritic on npmjs.com"
+              exit 1
+            }
+          fi
       - name: What "need auth" means here
         if: failure()
         run: |
