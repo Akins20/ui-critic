@@ -203,6 +203,9 @@ export function validate(cfg) {
       if (literalSecret) throw new Error("auth.steps must not contain a literal password: use fill.envVar and set the variable in the environment or auth.envFile");
     }
   }
+  if (!cfg.viewports || typeof cfg.viewports !== "object" || Object.keys(cfg.viewports).length === 0) {
+    throw new Error("viewports must name at least one viewport");
+  }
   for (const [name, vp] of Object.entries(cfg.viewports)) {
     if (!(vp.width > 0 && vp.height > 0)) throw new Error(`viewport ${name} needs a positive width and height`);
   }

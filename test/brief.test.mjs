@@ -4,7 +4,7 @@ import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { briefProblems, requireBrief, contextSections } from "../src/brief.mjs";
-import { mergeRequests, followablePages } from "../src/critique.mjs";
+import { mergeRequests, followablePages, viewportChoices, manifestViewports, pageSchema, overallSchema } from "../src/critique.mjs";
 import { auditSummary, auditForPrompt } from "../src/audit.mjs";
 import { requestsSection, coverageLine } from "../src/report.mjs";
 import { DEFAULTS, DEFAULT_DISCIPLINES, DEFAULT_PRINCIPLES } from "../src/config.mjs";
@@ -71,6 +71,20 @@ test("followablePages keeps same-origin, uncaptured page requests, capped", () =
   ];
   assert.deepEqual(followablePages(requests, manifest, 2), ["/checkout", "/account/plans?x=1"]);
   assert.deepEqual(followablePages(requests, manifest, 5), ["/checkout", "/account/plans?x=1", "/faq"]);
+});
+
+test("findings may name only the capture's own viewports, plus all when there are several", () => {
+  assert.deepEqual(viewportChoices(["desktop", "mobile"]), ["desktop", "mobile", "all"]);
+  assert.deepEqual(viewportChoices(["phone"]), ["phone"]);
+  assert.deepEqual(viewportChoices(["phone", "tablet", "phone", ""]), ["phone", "tablet", "all"]);
+  assert.deepEqual(viewportChoices([]), ["all"]);
+  assert.deepEqual(manifestViewports({ viewports: { phone: {}, tablet: {} }, shots: [] }), ["phone", "tablet"]);
+  assert.deepEqual(manifestViewports({ shots: [{ viewport: "a" }, { viewport: "b" }, { viewport: "a" }] }), ["a", "b"]);
+  const page = pageSchema(["phone", "tablet"]);
+  assert.deepEqual(page.properties.findings.items.properties.viewport.enum, ["phone", "tablet", "all"]);
+  const site = overallSchema(["phone"]);
+  assert.deepEqual(site.properties.consistency_findings.items.properties.viewport.enum, ["phone"]);
+  assert.ok(!JSON.stringify(page).includes('"both"'), "no fixed desktop/mobile pair left in the schema");
 });
 
 test("audit summary and prompt form are compact", () => {

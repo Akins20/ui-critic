@@ -51,6 +51,7 @@ test("validate rejects bad thinking levels, temperatures and viewports", () => {
   assert.throws(() => validate(merge(DEFAULTS, { generation: { temperature: 3 } })), /temperature/);
   assert.throws(() => validate(merge(DEFAULTS, { routes: [] })), /routes/);
   assert.throws(() => validate(merge(DEFAULTS, { viewports: { odd: { width: 0, height: 10 } } })), /viewport odd/);
+  assert.throws(() => validate({ ...merge(DEFAULTS, {}), viewports: {} }), /at least one viewport/);
   assert.equal(validate(merge(DEFAULTS, {})).model, DEFAULTS.model);
 });
 

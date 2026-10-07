@@ -5,6 +5,10 @@
 - A `viewports` map in the config replaces the built-in desktop and mobile pair instead of
   merging with it. A phone-only review that named one viewport still captured, and paid to
   critique, a desktop pass of every page.
+- Findings name the viewports the capture actually used. The finding schema was fixed to
+  desktop, mobile or both, so a review of a phone and a tablet labelled tablet findings as
+  desktop or mobile. A finding that applies everywhere now says `all` (it said `both`).
+- An empty `viewports` map is rejected with a clear message instead of capturing nothing.
 
 ## 0.3.2
 

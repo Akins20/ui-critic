@@ -40,11 +40,33 @@ Rules:
 - Runtime facts in the measured data (console errors, failed requests, HTTP errors, cumulative layout shift) are defects a screenshot cannot show: report each as a finding with the exact message or URL, and treat a layout shift above 0.1 as a real problem.
 - Scores are 0 to 100 against what a strong competitor in the same market ships today: 50 is average, 80 is excellent.`;
 
-const FINDING = {
+/**
+ * The viewport values a finding may name: every viewport the capture used, plus
+ * "all" when there are several. Built from the capture rather than fixed, so a
+ * phone-only review, or one with a tablet beside the phone, labels its findings
+ * with the names it was configured with instead of a forced desktop or mobile.
+ */
+export function viewportChoices(names) {
+  const unique = Array.from(new Set((names ?? []).filter((n) => typeof n === "string" && n)));
+  if (unique.length === 0) return ["all"];
+  return unique.length > 1 ? [...unique, "all"] : unique;
+}
+
+/** The viewport names of a capture: its manifest's viewports, else the ones its shots name. */
+export function manifestViewports(manifest) {
+  const named = Object.keys(manifest?.viewports ?? {});
+  return named.length ? named : Array.from(new Set((manifest?.shots ?? []).map((s) => s.viewport)));
+}
+
+const findingSchema = (viewports) => ({
   type: "OBJECT",
   properties: {
     page: { type: "STRING", description: "route of the page, e.g. / or /shop" },
-    viewport: { type: "STRING", enum: ["desktop", "mobile", "both"] },
+    viewport: {
+      type: "STRING",
+      enum: viewportChoices(viewports),
+      description: "the viewport the finding was seen at, by the name used in the screenshot labels, or all when it applies to every viewport",
+    },
     severity: { type: "STRING", enum: ["high", "medium", "low"] },
     category: {
       type: "STRING",
@@ -74,7 +96,7 @@ const FINDING = {
     },
   },
   required: ["page", "viewport", "severity", "category", "observation", "evidence", "recommendation", "effort", "defect_kind", "conflicts_with_decision"],
-};
+});
 
 const COVERAGE = {
   type: "OBJECT",
@@ -96,27 +118,29 @@ const REQUEST = {
   required: ["kind", "target", "why"],
 };
 
-const PAGE = {
+/** The schema of one page review, for a capture with the given viewport names. */
+export const pageSchema = (viewports) => ({
   type: "OBJECT",
   properties: {
     page: { type: "STRING" },
     summary: { type: "STRING", description: "two sentences on how this page performs for its job" },
     score: { type: "INTEGER" },
     strengths: { type: "ARRAY", items: { type: "STRING" } },
-    findings: { type: "ARRAY", items: FINDING },
+    findings: { type: "ARRAY", items: findingSchema(viewports) },
     coverage: { type: "ARRAY", items: COVERAGE, description: "one entry per design discipline in the list, in order" },
     requests: { type: "ARRAY", items: REQUEST, description: "what else you need to judge this page better; empty if nothing" },
   },
   required: ["page", "summary", "score", "strengths", "findings", "coverage", "requests"],
-};
+});
 
-const OVERALL = {
+/** The schema of the site-level review, for a capture with the given viewport names. */
+export const overallSchema = (viewports) => ({
   type: "OBJECT",
   properties: {
     verdict: { type: "STRING", description: "three sentences: what works, what does not, what to do" },
     score: { type: "INTEGER" },
     revamp_needed: { type: "BOOLEAN", description: "true only if targeted fixes cannot get this UI to competitive" },
-    consistency_findings: { type: "ARRAY", items: FINDING },
+    consistency_findings: { type: "ARRAY", items: findingSchema(viewports) },
     top_priorities: {
       type: "ARRAY",
       items: { type: "STRING" },
@@ -125,7 +149,7 @@ const OVERALL = {
     requests: { type: "ARRAY", items: REQUEST, description: "what else you need to judge the site better; empty if nothing" },
   },
   required: ["verdict", "score", "revamp_needed", "consistency_findings", "top_priorities", "requests"],
-};
+});
 
 const PARTIAL_FILE = "critique.partial.json";
 
@@ -245,6 +269,9 @@ export async function critique({ dir, config }) {
     prefix.push(text(`Screenshot: ${s.route} at ${s.viewport}, above the fold (${s.title})`), await imagePart(s.fold));
   }
   const cached = await client.ensureCache(prefix, `ui-critic ${manifest.label}`);
+  const viewports = manifestViewports(manifest);
+  const PAGE = pageSchema(viewports);
+  const OVERALL = overallSchema(viewports);
   const thoughtLog = [];
   const done = await loadPartial(dir, manifest, config.model);
   const partialPath = path.join(dir, PARTIAL_FILE);
