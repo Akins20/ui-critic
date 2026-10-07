@@ -25,6 +25,7 @@ import { appendFile, readFile, writeFile } from "node:fs/promises";
 import { lintCapture, renderLint } from "../src/lint.mjs";
 import { tryon } from "../src/tryon.mjs";
 import { benchmark } from "../src/benchmark.mjs";
+import { renderAssets } from "../src/assets.mjs";
 
 /** The short summary of the results saved in a capture folder: the comparison if there is one, else the critique. */
 async function summaryOf(dir, opts) {
@@ -66,6 +67,9 @@ Commands
              --in <capture dir> --goal <text> [--variants 3]   let the critic draft directions as CSS and try each on
              [--routes /,/shop] [--no-judge]          (no-judge renders without asking the critic for verdicts)
   benchmark  --in <capture dir> [--name Jumia]       capture the competitors in "benchmarks" and compare page by page
+  assets     --in <capture dir> [--kind store,social] [--captions auto|file.json] [--product name]
+                                                    store screenshots (Play 1080x1920, App Store 1290x2796) and
+                                                    social cards (1200x630) rendered from the captures
   lint       --in <capture dir> [--fail-on lint]     design-system lint from the computed styles (free): token drift,
                                                     off-palette colours, spacing off the grid, type, radius and shadow sprawl
   report     --in <capture dir>                      render critique.html and compare.html again from saved results (free)
@@ -149,6 +153,9 @@ const OPTIONS = {
   variants: { type: "string" },
   "no-judge": { type: "boolean" },
   name: { type: "string" },
+  kind: { type: "string" },
+  captions: { type: "string" },
+  product: { type: "string" },
   help: { type: "boolean", short: "h" },
 };
 
@@ -323,6 +330,15 @@ async function main() {
           files: { html: result.htmlPath, json: result.jsonPath },
         },
       );
+      return;
+    }
+    case "assets": {
+      if (!flags.in) throw new Error("assets needs --in <capture dir>");
+      const kinds = flags.kind ? flags.kind.split(",").map((k) => k.trim()) : ["store", "social"];
+      const auto = flags.captions === "auto";
+      const captions = flags.captions && !auto ? JSON.parse(await readFile(flags.captions, "utf8")) : {};
+      const result = await renderAssets({ dir: flags.in, config, kinds, captions, auto, product: flags.product });
+      emit(config, [`assets written to ${result.dir}:`, ...result.files.map((f) => `  ${path.relative(result.dir, f.file)} (${f.width}x${f.height})`), `background ${result.colors.bg}, captions in ${result.colors.ink}`].join("\n"), { command: "assets", dir: result.dir, colors: result.colors, captions: result.captions, files: result.files });
       return;
     }
     case "benchmark": {

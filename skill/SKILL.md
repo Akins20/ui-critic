@@ -75,7 +75,9 @@ not see the code or the product decisions, only what you give it.
    measurements, pages elsewhere) is yours to fulfil: write answers in
    `ui-critic/answers.md`, add files to `context.files`, add pages to `routes`, and rerun
    `critique --in <dir>` when the answers change the judgement. Be honest in answers; the
-   critic cannot check them.
+   critic cannot check them. When the brief names benchmarks, map them in `benchmarks`
+   (your route to theirs) and run `ui-critic benchmark --in <dir>` to see what they do
+   better and how to adopt it within the brand.
 6. **Triage every finding** into accept, adapt or reject, each with a one-line reason.
    Record every rejection the user confirms as a bullet in `ui-critic/decisions.md` with
    its reason: the critic is told those are closed and withholds findings that would only
@@ -97,7 +99,13 @@ not see the code or the product decisions, only what you give it.
    measured`, which cannot flake on taste. To set CI up, the repository is a GitHub
    Action (`Akins20/ui-critic@<version>`, see the README's "In CI"): it comments on the
    pull request, uploads the HTML reports and gates on measured regressions.
-9. **Report** in plain language: what changed, what was rejected and why, what the critic
+9. **Reuse the screens.** A review holds clean, current screenshots of every page, so
+   when the user needs store listing images or a link preview, `ui-critic assets --in
+   <dir>` renders them at Play, App Store and Open Graph sizes rather than anyone
+   opening a design tool. Offer it after a review of an app or a landing page; use
+   `--captions auto` for a first draft and edit the wording, since the critic writes
+   from the brief and cannot know a claim the screen does not show.
+10. **Report** in plain language: what changed, what was rejected and why, what the critic
    still asks for, what is still open, the cost of the runs (`ui-critic cost` totals the
    ledger per run at built-in prices; the usage line of each report names the price it
    used), with the scores as context rather than the goal.

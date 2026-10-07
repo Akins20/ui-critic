@@ -86,6 +86,13 @@
   desktop, mobile or both, so a review of a phone and a tablet labelled tablet findings as
   desktop or mobile. A finding that applies everywhere now says `all` (it said `both`).
 - An empty `viewports` map is rejected with a clear message instead of capturing nothing.
+- Store screenshots and social cards (`ui-critic assets`): the screens a review already
+  captured, rendered at Google Play, App Store 6.7-inch and 1200x630 social sizes as
+  HTML photographed in the capture browser, so no design tool or image library is
+  needed. Captions come from the config or are drafted by the critic from the brief.
+  The background is a brand token where there is one; an app has no stylesheet, so
+  the colour is measured from the screenshots, greys dropped by chroma and one accent
+  drawn at several lightnesses merged into one family, named by its most vivid shade.
 
 ## 0.3.2
 

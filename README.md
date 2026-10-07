@@ -247,6 +247,7 @@ triage instead of obeying.
 | `tryon --in dir --css file` or `--goal text` | lay CSS over the live pages and compare with the original, or let the critic draft directions |
 | `benchmark --in dir [--name X]` | capture the competitors in `benchmarks` and compare them with your pages, page by page |
 | `lint --in dir` | design-system lint from the computed styles: token drift, palette, type, spacing, radius, shadow (free) |
+| `assets --in dir [--kind store\|social]` | store screenshots and social cards rendered from the screens already captured |
 | `report --in dir` | render `critique.html` and `compare.html` again from saved results, with no calls |
 | `summary --in dir` | a short Markdown summary for a pull request or a CI job |
 | `comment --in dir [--pr N]` | post that summary on the pull request, or update the earlier one |
@@ -376,6 +377,29 @@ and the fix; the report ends with proposed scales (a palette, a fitted modular t
 scale, spacing and radii). Tokens beyond the page's own custom properties can come
 from `lint.tokens` (a flat map or W3C design tokens). `--fail-on lint` exits 2 on a
 high-severity finding, for CI.
+
+## Store screenshots and social cards
+
+A review already holds clean, current screens of every page, so `ui-critic assets --in
+<dir>` turns them into the images a listing asks for, with no design tool and no image
+library: Google Play phone (1080x1920), App Store 6.7-inch (1290x2796) and a 1200x630
+social card. Each is an HTML template photographed in the same browser the capture uses,
+so the sizes are exact.
+
+Store images put a caption over a phone frame holding the screen (a punch-hole camera
+for Play, an island for the App Store). Social cards put the page's headline beside its
+first screen in a browser frame. The background is the product's brand colour: a token
+whose name says brand, primary or accent, else the colour the screens are actually
+painted in. An app has no stylesheet to read, so there the colour is measured from the
+screenshots themselves, with greys and near-whites dropped by chroma and one accent
+drawn at several lightnesses merged into one family, so a flat footer does not outweigh
+the real brand colour. The caption ink is whichever of white or near-black has the
+better contrast on it.
+
+`--captions auto` has the critic draft one short caption per screen from the brief;
+`--captions '{"/": "..."}'` or `assets.captions` in the config sets them by hand, and
+`assets.background` overrides the colour. `--product "Name"` names the product in the
+social eyebrow, and the headline drops that name when the page title already repeats it.
 
 ## In CI
 
